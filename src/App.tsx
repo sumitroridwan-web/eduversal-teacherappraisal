@@ -164,6 +164,7 @@ export default function App() {
           <OverviewAnalytics
             appraisals={appraisals}
             onSelectAppraisal={handleSelectAppraisal}
+            onViewReport={handleViewReport}
             onNewAppraisal={handleNewAppraisal}
           />
         )}

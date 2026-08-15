@@ -15,6 +15,7 @@ import {
   Building2,
   Sparkles,
   ChevronDown,
+  FileText,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -43,6 +44,7 @@ import { calculateF2Scores, calculateF2Predicate } from '../data/frameworkRubric
 interface OverviewAnalyticsProps {
   appraisals: TeacherAppraisalRecord[];
   onSelectAppraisal: (appraisal: TeacherAppraisalRecord) => void;
+  onViewReport: (appraisal: TeacherAppraisalRecord) => void;
   onNewAppraisal: () => void;
 }
 
@@ -59,6 +61,7 @@ const GRAPH_TAB_OPTIONS: Array<{ value: GraphTab; label: string; icon: LucideIco
 export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
   appraisals,
   onSelectAppraisal,
+  onViewReport,
   onNewAppraisal,
 }) => {
   const [selectedSchool, setSelectedSchool] = useState<string>('All');
@@ -997,18 +1000,33 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
                       <div className="text-[11px] font-mono text-slate-500">{band.f2Percent}%</div>
                     </td>
 
-                    <td className="py-3 px-4 text-right">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onSelectAppraisal(a);
-                        }}
-                        className="text-xs text-indigo-600 hover:text-indigo-700 font-medium px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition inline-flex items-center gap-1 cursor-pointer"
-                      >
-                        <span>Open Sheet</span>
-                        <ArrowUpRight className="w-3 h-3" />
-                      </button>
+                    <td className="py-3 px-4">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onViewReport(a);
+                          }}
+                          title={`Open the observation report for ${a.teacherName || 'this teacher'}`}
+                          className="text-xs text-[#165963] hover:text-[#11474f] font-semibold px-2.5 py-1 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg transition inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                        >
+                          <FileText className="w-3 h-3" />
+                          <span>Teacher Report</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectAppraisal(a);
+                          }}
+                          className="text-xs text-indigo-600 hover:text-indigo-700 font-medium px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                        >
+                          <span>Open Sheet</span>
+                          <ArrowUpRight className="w-3 h-3" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
