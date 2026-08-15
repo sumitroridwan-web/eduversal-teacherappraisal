@@ -1,9 +1,10 @@
 /**
  * Vercel serverless entrypoint.
  *
- * The [...path] catch-all means Vercel's own filesystem routing sends every
- * /api/* request here - no rewrite rule required - and Express matches on the
- * original path (e.g. /api/auth/login) exactly as it does locally.
+ * vercel.json rewrites every /api/* request here and Express matches on the
+ * original path (e.g. /api/auth/login) exactly as it does locally. A
+ * [...path] catch-all was tried instead, but Vercel matched it only against
+ * single-segment paths, so /api/auth/session returned a platform 404.
  *
  * The app is imported lazily inside a try/catch: if it fails to initialise,
  * Vercel would otherwise answer with an opaque FUNCTION_INVOCATION_FAILED and
