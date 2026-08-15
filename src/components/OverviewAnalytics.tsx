@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import {
   BarChart3,
   TrendingUp,
@@ -13,6 +14,7 @@ import {
   Compass,
   Building2,
   Sparkles,
+  ChevronDown,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -35,7 +37,7 @@ import {
   Line,
   ReferenceLine,
 } from 'recharts';
-import { TeacherAppraisalRecord, SchoolLevel, SubjectCategory, CareerLevel, EDUVERSAL_SCHOOLS } from '../types';
+import { TeacherAppraisalRecord, SchoolLevel, SubjectCategory, CareerLevel, ItemScoreRecord, EDUVERSAL_SCHOOLS } from '../types';
 import { calculateF2Scores, calculateF2Predicate } from '../data/frameworkRubrics';
 
 interface OverviewAnalyticsProps {
@@ -45,6 +47,14 @@ interface OverviewAnalyticsProps {
 }
 
 type GraphTab = 'overview' | 'campuses' | 'domains' | 'career_dept' | 'ranking';
+
+const GRAPH_TAB_OPTIONS: Array<{ value: GraphTab; label: string; icon: LucideIcon }> = [
+  { value: 'overview', label: 'Grades & Components', icon: PieIcon },
+  { value: 'campuses', label: 'Campus Benchmarks', icon: Building2 },
+  { value: 'domains', label: 'Rubric Domains', icon: Compass },
+  { value: 'career_dept', label: 'Levels & Departments', icon: Layers },
+  { value: 'ranking', label: 'Teacher Score Spread', icon: TrendingUp },
+];
 
 export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
   appraisals,
@@ -56,6 +66,9 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activeGraphTab, setActiveGraphTab] = useState<GraphTab>('overview');
+
+  const ActiveViewIcon =
+    GRAPH_TAB_OPTIONS.find((o) => o.value === activeGraphTab)?.icon ?? PieIcon;
 
   // Filter appraisals
   const filteredAppraisals = useMemo(() => {
@@ -87,6 +100,7 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
     careerStats,
     categoryStats,
     domainStats,
+    hasDomainData,
     teacherRankings,
     progressionReadyCount,
   } = useMemo(() => {
@@ -156,15 +170,17 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
       careerMap[a.careerLevel].count++;
       careerMap[a.careerLevel].f2Sum += f2Stats.percentage;
 
-      // Extract domain scores
-      Object.entries(a.scores || {}).forEach(([code, val]) => {
-        if (typeof val === 'number') {
-          const pct = (val / 4) * 100;
-          if (code.startsWith('D1.') || code.startsWith('EY-A.')) d1Scores.push(pct);
-          else if (code.startsWith('D2.') || code.startsWith('EY-B.')) d2Scores.push(pct);
-          else if (code.startsWith('D3.') || code.startsWith('EY-C.')) d3Scores.push(pct);
-          else if (code.startsWith('D4.')) d4Scores.push(pct);
-        }
+      // Extract domain scores. Scores are { score, notes } records, and Early
+      // Years items are prefixed EYD1..EYD4, so only rated items count here.
+      Object.entries(a.scores || {}).forEach(([code, val]: [string, ItemScoreRecord]) => {
+        const rating = val?.score;
+        if (typeof rating !== 'number') return;
+
+        const pct = (rating / 4) * 100;
+        if (code.startsWith('D1.') || code.startsWith('EYD1.')) d1Scores.push(pct);
+        else if (code.startsWith('D2.') || code.startsWith('EYD2.')) d2Scores.push(pct);
+        else if (code.startsWith('D3.') || code.startsWith('EYD3.')) d3Scores.push(pct);
+        else if (code.startsWith('D4.') || code.startsWith('EYD4.')) d4Scores.push(pct);
       });
 
       rankings.push({
@@ -183,7 +199,10 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
     const count = filteredAppraisals.length || 1;
     const avgF2 = Math.round((f2Sum / count) * 10) / 10;
 
-    const avgDomain = (arr: number[]) => (arr.length > 0 ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : 85);
+    // No rated items means no attainment to report - report 0, never a
+    // placeholder, so an empty dashboard cannot read as a passing score.
+    const avgDomain = (arr: number[]) => (arr.length > 0 ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : 0);
+    const ratedItemCount = d1Scores.length + d2Scores.length + d3Scores.length + d4Scores.length;
 
     const dStats = [
       { domain: 'Domain 1: Planning', shortName: 'Planning', score: avgDomain(d1Scores), benchmark: 75, fullMark: 100 },
@@ -207,6 +226,7 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
       campusStats: campusMap,
       careerStats: careerMap,
       domainStats: dStats,
+      hasDomainData: ratedItemCount > 0,
       teacherRankings: rankings,
       progressionReadyCount: progReady,
     };
@@ -437,71 +457,26 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
             </p>
           </div>
 
-          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200 overflow-x-auto">
-            <button
-              type="button"
-              onClick={() => setActiveGraphTab('overview')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
-                activeGraphTab === 'overview'
-                  ? 'bg-white text-indigo-700 shadow-2xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <PieIcon className="w-3.5 h-3.5" />
-              <span>Grades &amp; Components</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveGraphTab('campuses')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
-                activeGraphTab === 'campuses'
-                  ? 'bg-white text-indigo-700 shadow-2xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Building2 className="w-3.5 h-3.5" />
-              <span>Campus Benchmarks</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveGraphTab('domains')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
-                activeGraphTab === 'domains'
-                  ? 'bg-white text-indigo-700 shadow-2xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Compass className="w-3.5 h-3.5" />
-              <span>Rubric Domains</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveGraphTab('career_dept')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
-                activeGraphTab === 'career_dept'
-                  ? 'bg-white text-indigo-700 shadow-2xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Layers className="w-3.5 h-3.5" />
-              <span>Levels &amp; Departments</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveGraphTab('ranking')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer whitespace-nowrap ${
-                activeGraphTab === 'ranking'
-                  ? 'bg-white text-indigo-700 shadow-2xs font-bold'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <TrendingUp className="w-3.5 h-3.5" />
-              <span>Teacher Score Spread</span>
-            </button>
+          <div className="sm:min-w-[260px]">
+            <label htmlFor="analytics-view" className="sr-only">
+              Analytics view
+            </label>
+            <div className="relative">
+              <ActiveViewIcon className="w-4 h-4 text-indigo-600 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <select
+                id="analytics-view"
+                value={activeGraphTab}
+                onChange={(e) => setActiveGraphTab(e.target.value as GraphTab)}
+                className="w-full appearance-none pl-9 pr-9 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 outline-none cursor-pointer transition hover:bg-white focus:bg-white focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+              >
+                {GRAPH_TAB_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
           </div>
         </div>
 
@@ -580,6 +555,15 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
                 </p>
 
                 <div className="h-64 w-full">
+                  {!hasDomainData ? (
+                    <div className="h-full w-full flex flex-col items-center justify-center text-center border border-dashed border-slate-300 rounded-xl bg-white/60">
+                      <Compass className="w-7 h-7 text-slate-300 mb-2" />
+                      <p className="text-xs font-semibold text-slate-600">No rubric indicators scored yet</p>
+                      <p className="text-[11px] text-slate-400 mt-1 max-w-xs">
+                        Domain attainment appears once observation sheets have rated indicators.
+                      </p>
+                    </div>
+                  ) : (
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={domainStats} margin={{ top: 10, right: 20, left: -10, bottom: 20 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
@@ -601,6 +585,7 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
+                  )}
                 </div>
               </div>
 
@@ -718,7 +703,7 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
 
               <div className="pt-3 border-t border-slate-200 text-xs text-slate-500 flex items-center justify-between">
                 <span>Domain target threshold: <strong>75%</strong></span>
-                <span className="text-indigo-600 font-semibold">Highest: Instruction ({domainStats[2]?.score || 88}%)</span>
+                <span className="text-indigo-600 font-semibold">Highest: Instruction ({domainStats[2]?.score ?? 0}%)</span>
               </div>
             </div>
 
