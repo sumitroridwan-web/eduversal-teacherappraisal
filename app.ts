@@ -8,6 +8,13 @@
 import "dotenv/config";
 import express, { NextFunction, Request, Response } from "express";
 import crypto from "crypto";
+import {
+  isFirestoreConfigured,
+  listRecords,
+  getRecord,
+  putRecord,
+  deleteRecord,
+} from "./firestore.js";
 // Type-only: erased at compile time, so the SDK is not pulled in at module load.
 import type { GoogleGenAI } from "@google/genai";
 
@@ -219,6 +226,98 @@ function languageDirective(language: unknown): string {
         "codes (D1.1, W3 and so on) and the terms Glow, Grow and Go unchanged.\n"
     : "\n\nWrite all narrative output in English.\n";
 }
+
+
+/* ------------------------------------------------------------------ *
+ * Record sync
+ *
+ * One shared account, several devices. Writes carry the updatedAt the device
+ * started from; if the stored copy has moved on since, the write is refused
+ * with 409 and the server's version, so the second device can decide rather
+ * than silently overwriting a colleague's work.
+ * ------------------------------------------------------------------ */
+
+const SYNC_COLLECTIONS: Record<string, string> = {
+  appraisals: "appraisals",
+  walkthroughs: "walkthroughs",
+};
+
+function resolveCollection(req: Request, res: Response): string | null {
+  const collection = SYNC_COLLECTIONS[String(req.params.collection)];
+  if (!collection) {
+    res.status(404).json({ error: "Unknown collection." });
+    return null;
+  }
+  if (!isFirestoreConfigured()) {
+    res.status(503).json({
+      error: "Sync is not configured on this server.",
+      configured: false,
+    });
+    return null;
+  }
+  return collection;
+}
+
+app.get("/api/sync/status", (req, res) => {
+  res.json({ configured: isFirestoreConfigured() });
+});
+
+app.get("/api/sync/:collection", requireAuth, async (req, res) => {
+  const collection = resolveCollection(req, res);
+  if (!collection) return;
+  try {
+    const records = await listRecords(collection);
+    res.json({ records: records.map((r) => r.payload), count: records.length });
+  } catch (error: any) {
+    console.error("Sync list failed:", error);
+    res.status(502).json({ error: error?.message || "Could not read from Firestore." });
+  }
+});
+
+app.put("/api/sync/:collection/:id", requireAuth, async (req, res) => {
+  const collection = resolveCollection(req, res);
+  if (!collection) return;
+
+  const { record, baseUpdatedAt } = req.body || {};
+  if (!record || typeof record !== "object" || !record.id) {
+    return res.status(400).json({ error: "A record with an id is required." });
+  }
+
+  try {
+    const existing = await getRecord(collection, String(req.params.id));
+
+    // Someone else changed this record since this device last read it.
+    if (existing && baseUpdatedAt && existing.updatedAt !== baseUpdatedAt) {
+      return res.status(409).json({
+        error: "This record was changed on another device.",
+        serverRecord: existing.payload,
+        serverUpdatedAt: existing.updatedAt,
+      });
+    }
+
+    const updatedAt = record.updatedAt || new Date().toISOString();
+    await putRecord(collection, { id: String(record.id), updatedAt, payload: record });
+    res.json({ success: true, updatedAt });
+  } catch (error: any) {
+    if (error?.code === "TOO_LARGE") {
+      return res.status(413).json({ error: error.message });
+    }
+    console.error("Sync write failed:", error);
+    res.status(502).json({ error: error?.message || "Could not write to Firestore." });
+  }
+});
+
+app.delete("/api/sync/:collection/:id", requireAuth, async (req, res) => {
+  const collection = resolveCollection(req, res);
+  if (!collection) return;
+  try {
+    await deleteRecord(collection, String(req.params.id));
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error("Sync delete failed:", error);
+    res.status(502).json({ error: error?.message || "Could not delete from Firestore." });
+  }
+});
 
 // API Health
 app.get("/api/health", (req, res) => {

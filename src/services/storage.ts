@@ -1,6 +1,7 @@
 import { TeacherAppraisalRecord, CareerLevel, SchoolLevel, SubjectCategory, currentAcademicYear } from '../types';
 import { calculateF2Scores, calculateF2Predicate, getItemsForLevel } from '../data/frameworkRubrics';
 import { capFeedback } from './glowGrowGo';
+import { pushRecord, deleteRemote } from './sync';
 
 const STORAGE_KEY = 'eduversal_appraisals_v4_clean';
 
@@ -78,6 +79,9 @@ export function saveOrUpdateAppraisal(record: TeacherAppraisalRecord): TeacherAp
     all.unshift(record);
   }
   saveAppraisals(all);
+  // Fire-and-forget: the local write already succeeded, and sync.ts queues
+  // this for retry if the network is down.
+  void pushRecord('appraisals', record);
   return record;
 }
 
@@ -85,6 +89,7 @@ export function deleteAppraisal(id: string): void {
   const all = loadAppraisals();
   const filtered = all.filter((a) => a.id !== id);
   saveAppraisals(filtered);
+  void deleteRemote('appraisals', id);
 }
 
 export function createBlankAppraisal(

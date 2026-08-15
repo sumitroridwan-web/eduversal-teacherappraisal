@@ -1,3 +1,4 @@
+import { pushRecord, deleteRemote } from './sync';
 import {
   WalkthroughRecord,
   WALKTHROUGH_INDICATORS,
@@ -78,9 +79,11 @@ export function saveOrUpdateWalkthrough(record: WalkthroughRecord): WalkthroughR
   else all.unshift(updated);
 
   saveWalkthroughs(all);
+  void pushRecord('walkthroughs', updated);
   return updated;
 }
 
 export function deleteWalkthrough(id: string): void {
   saveWalkthroughs(loadWalkthroughs().filter((w) => w.id !== id));
+  void deleteRemote('walkthroughs', id);
 }

@@ -40,7 +40,9 @@ import {
   saveOrUpdateWalkthrough,
   deleteWalkthrough,
   createBlankWalkthrough,
+  saveWalkthroughs,
 } from '../services/walkthroughStorage';
+import { flushQueue, pullAndMerge } from '../services/sync';
 import {
   ALL,
   WalkthroughFilters,
@@ -103,6 +105,28 @@ export const WalkthroughView: React.FC = () => {
   useEffect(() => {
     setRecords(loadWalkthroughs());
     loadLogoDataUrl().then(setLogo);
+  }, []);
+
+  // Pick up walkthroughs recorded on other devices.
+  useEffect(() => {
+    let cancelled = false;
+
+    const sync = async () => {
+      await flushQueue();
+      const { merged, changed } = await pullAndMerge('walkthroughs', loadWalkthroughs());
+      if (cancelled || !changed) return;
+      saveWalkthroughs(merged as WalkthroughRecord[]);
+      setRecords(merged as WalkthroughRecord[]);
+    };
+
+    void sync();
+    const timer = setInterval(sync, 60_000);
+    window.addEventListener('online', sync);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      window.removeEventListener('online', sync);
+    };
   }, []);
 
   const report = useMemo(() => buildWalkthroughReport(records, filters), [records, filters]);

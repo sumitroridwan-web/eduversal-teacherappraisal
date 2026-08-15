@@ -41,6 +41,44 @@ the browser bundle.
 When deploying, set `APP_PASSWORD` in the hosting environment's secrets —
 never commit it, as this repository is public.
 
+## Multi-device sync (Firestore)
+
+Records live in the browser by default. Setting the three `FIREBASE_*`
+variables turns on sync, so one shared account can be used from several
+devices during an appraisal period.
+
+1. Create a Firebase project, then create a **Firestore database in
+   `asia-southeast2` (Jakarta)**. The region is fixed at creation.
+2. **Project settings → Service accounts → Generate new private key**, and put
+   `project_id`, `client_email` and `private_key` into the environment
+   variables above.
+3. Lock the database down. All access goes through this API, which is already
+   behind the platform password, so no browser ever needs direct access:
+
+   ```
+   rules_version = '2';
+   service cloud.firestore {
+     match /databases/{database}/documents {
+       match /{document=**} { allow read, write: if false; }
+     }
+   }
+   ```
+
+   The service account bypasses these rules; anyone else is refused.
+
+How it behaves:
+
+- Writes go to the browser first and are pushed up afterwards, so a lost
+  connection mid-observation cannot cost the lesson. Queued writes retry
+  automatically and on reconnect.
+- Other devices' changes are pulled on load and every 60 seconds.
+- If the same record was changed on two devices, the second write is refused
+  and the appraiser is asked which version to keep. Nothing is overwritten
+  silently.
+- Firestore allows about 1 MB per record and photos are stored inside it, so a
+  photo-heavy observation can be rejected with a clear message. Moving photos
+  to Cloud Storage is the fix if that becomes common.
+
 ## Deploying to Vercel
 
 The frontend is served from `dist/` by Vercel's CDN and the API runs as a
