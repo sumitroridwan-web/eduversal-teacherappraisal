@@ -1,0 +1,10 @@
+{
+  "name": "Eduversal Teacher Appraisal Platform",
+  "description": "Comprehensive digital platform for classroom observation and teacher appraisal based on Framework 2 with AI voice lesson analysis, full rubrics, PDF reports, and cross-subject performance analytics.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

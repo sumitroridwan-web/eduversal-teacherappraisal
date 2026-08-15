@@ -1,0 +1,223 @@
+export type CareerLevel = 'Induction' | 'Developing' | 'Proficient' | 'Lead' | 'EarlyYears';
+
+export const EDUVERSAL_SCHOOLS = [
+  'Global Cahaya Bangsa',
+  'Kesatuan Bangsa School',
+  'Cahaya Rancamaya Islamic School',
+  'Pribadi Depok School',
+  'Pribadi Premiere School',
+  'Mega Islamic School',
+  'Emer Islamic Boarding School (EIBOS)',
+  'Semesta 2',
+  'Pakar Belia Islamic Boarding School',
+  'Kharisma Bangsa School',
+  'Pribadi Bandung School',
+  'Prestige Bilingual School',
+  'Fatih Bilingual School',
+  'TNA Fatih Bilingual School',
+  'Semesta School',
+] as const;
+
+export type EduversalSchoolName = typeof EDUVERSAL_SCHOOLS[number];
+
+export type SchoolLevel =
+  | 'Early Years (PG-KG)'
+  | 'Primary (Grades 1-6)'
+  | 'Middle School (Grades 7-9)'
+  | 'High School (Grades 10-12)';
+
+export type SubjectCategory =
+  | 'Mathematics'
+  | 'Science (Physics, Chem, Bio)'
+  | 'English Language & Lit'
+  | 'Bahasa Indonesia'
+  | 'Social Studies & Humanities'
+  | 'Information & Digital Tech'
+  | 'Arts & Music'
+  | 'Physical & Health Education'
+  | 'Early Childhood Education';
+
+export type FrameworkType = 'F1' | 'F2' | 'F3' | 'F4';
+
+export type ObservationSection = 'A' | 'B' | 'C';
+
+export interface RubricDescriptor {
+  score: 1 | 2 | 3 | 4;
+  label: 'Unsatisfactory' | 'Basic' | 'Proficient' | 'Distinguished';
+  description: string;
+}
+
+export interface AppraisalItem {
+  id: string; // e.g. "D1.1", "EYD1.1", "F1.1", "F3.1", "L1"
+  domainId: string; // e.g. "Domain 1: Lesson Planning"
+  framework: FrameworkType;
+  section: ObservationSection; // A: Pre-visit, B: Live Observation, C: Post-lesson
+  title: string;
+  theoryBasis?: string; // e.g. "Danielson FfT 1c", "Marzano DQ3"
+  visibleFrom: CareerLevel[]; // which levels see this item
+  coachingFocus: string;
+  growPrompt?: string;
+  goPrompt?: string;
+  followUpIndicators?: string;
+  descriptors: Record<1 | 2 | 3 | 4, string>;
+}
+
+export interface LessonActivity {
+  id: string;
+  name: string; // e.g. "Hook & Prior Knowledge Activation", "Direct Instruction & Modeling", "Guided Group Problem-Solving", "Independent Practice", "Plenary & Exit Ticket"
+  durationMinutes?: number;
+  timeRange?: string; // e.g. "08:00 - 08:15"
+  modality?:
+    | 'Whole Class Teacher-Led'
+    | 'Whole-Class Demonstration'
+    | 'Whole-Class Interactive'
+    | 'Whole-Class Reflection'
+    | 'Collaborative Group Work'
+    | 'Hands-on Small Group'
+    | 'Individual Independent Task'
+    | 'Individual Reflection'
+    | 'Individual / Small Group'
+    | 'Pair Share / Discussion'
+    | 'Paired Digital Modeling'
+    | 'Paired Digital Exploration'
+    | 'Peer Collaborative'
+    | 'Formative Assessment / Quiz'
+    | 'Hands-on Lab / Experiment'
+    | 'Student Presentation / Seminar'
+    | string;
+  teacherNotes: string; // Teacher Actions & Questions
+  studentEvidenceNotes: string; // Observable Student Responses & Misconceptions
+}
+
+export interface ItemScoreRecord {
+  score: 1 | 2 | 3 | 4 | null;
+  notes: string;
+  evidenceSource?: 'Lesson Plan Review' | 'Live Classroom Observation' | 'Post-Lesson Discussion' | 'Edunav Record Review';
+}
+
+export interface GlowGrowGo {
+  glow: string[];
+  grow: string[];
+  go: string[];
+}
+
+export interface AutoGradeResult {
+  scores: Array<{
+    indicatorCode: string;
+    score: 1 | 2 | 3 | 4;
+    rationale: string;
+    domainId: string;
+    title: string;
+  }>;
+  overallScore: number;
+  maxScore: number;
+  percentage: number;
+  grade: 'A' | 'B' | 'C' | 'D' | 'F';
+  glow: string[];
+  grow: string[];
+  go: string[];
+  summaryEvaluation: string;
+  activitiesEvaluatedCount: number;
+}
+
+export interface AiLessonAnalysis {
+  summary: string;
+  teacherTalkPercentage: number;
+  studentTalkPercentage: number;
+  higherOrderThinkingPercentage: number;
+  calpProficiencyNotes?: string;
+  timeline: Array<{
+    phase: string;
+    timestamp?: string;
+    description: string;
+    strengths?: string;
+  }>;
+  suggestedScores: Array<{
+    indicatorCode: string;
+    score: 1 | 2 | 3 | 4;
+    evidence: string;
+  }>;
+  glow: string[];
+  grow: string[];
+  go: string[];
+}
+
+export interface TeacherAppraisalRecord {
+  id: string;
+  schoolName: string;
+  appraiserName: string;
+  appraiserRole: string;
+  teacherName: string;
+  teacherEmail?: string;
+  careerLevel: CareerLevel;
+  schoolLevel: SchoolLevel;
+  subject: string;
+  subjectCategory: SubjectCategory;
+  gradeClass: string;
+  lessonTopic: string;
+  learningObjectives?: string;
+  observationDate: string;
+  timeIn: string;
+  timeOut: string;
+  durationMinutes?: number;
+  contactedBeforeVisit: 'Yes' | 'Not needed';
+  preVisitContactDate?: string;
+  
+  // Status
+  status: 'Draft' | 'Observation Saved' | 'Finalized (Conference Complete)';
+
+  // Structured Lesson Activities Timeline & Notes
+  activities?: LessonActivity[];
+  
+  // Scores dictionary: key is item ID (e.g. "D1.1", "D2.1", "EYD1.1", "F1.1", etc.)
+  scores: Record<string, ItemScoreRecord>;
+  
+  // Framework 1, 3, 4 overrides or manual totals if scored
+  f1ScorePercent?: number; // 0 - 100%
+  f3ScorePercent?: number; // 0 - 100%
+  f4ScorePercent?: number; // 0 - 100%
+  
+  // Qualitative Feedback
+  feedback: GlowGrowGo;
+  generalObserverNotes: string;
+  postConferenceDiscussionSummary?: string;
+  
+  // Audio & AI Data
+  hasAudioRecording?: boolean;
+  audioDurationSeconds?: number;
+  audioTranscription?: string;
+  aiAnalysis?: AiLessonAnalysis;
+  
+  // Computed stats cached
+  f2RawScore?: number;
+  f2MaxScore?: number;
+  f2Percentage?: number;
+  indicativeGrade?: 'A' | 'B' | 'C' | 'D' | 'F';
+  compositeScore?: number;
+  finalPredicate?: 'Excellent' | 'Good' | 'Satisfactory' | 'Needs Improvement' | 'Unsatisfactory';
+  
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DepartmentSummary {
+  subjectCategory: SubjectCategory;
+  count: number;
+  averageF2Score: number;
+  averageComposite: number;
+  predicates: {
+    A: number;
+    B: number;
+    C: number;
+    D: number;
+    F: number;
+  };
+  domainAverages: {
+    lessonPlanning: number;
+    classroomManagement: number;
+    instructionalProcess: number;
+    assessment: number;
+  };
+  strongestIndicators: string[];
+  growthIndicators: string[];
+}
