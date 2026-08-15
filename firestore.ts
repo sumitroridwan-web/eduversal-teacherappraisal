@@ -25,14 +25,47 @@ export interface StoredRecord {
   payload: any;
 }
 
+/**
+ * Recovers a usable PEM from however the key survived the environment.
+ *
+ * A service-account key is multi-line, and every hosting UI mangles it
+ * differently: pasted with the JSON quotes still attached, with newlines turned
+ * into literal \n, or with CRLF. Node then fails with an opaque
+ * "DECODER routines::unsupported", which says nothing about the real cause, so
+ * the value is normalised here instead.
+ */
+export function normalizePrivateKey(raw: string): string {
+  let key = raw.trim();
+
+  // Whole value wrapped in quotes, copied straight out of the JSON file.
+  if (
+    (key.startsWith('"') && key.endsWith('"')) ||
+    (key.startsWith("'") && key.endsWith("'"))
+  ) {
+    key = key.slice(1, -1).trim();
+  }
+
+  // Base64 of the entire PEM, which is how some people dodge newline problems.
+  if (!key.includes("BEGIN")) {
+    try {
+      const decoded = Buffer.from(key, "base64").toString("utf8");
+      if (decoded.includes("BEGIN")) key = decoded.trim();
+    } catch {
+      // Leave it as-is; the signing step reports a clear error below.
+    }
+  }
+
+  key = key.replace(/\\r/g, "").replace(/\\n/g, "\n").replace(/\r/g, "");
+  return key.endsWith("\n") ? key : `${key}\n`;
+}
+
 function serviceAccount() {
   const projectId = process.env.FIREBASE_PROJECT_ID;
   const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-  // Vercel stores the key with literal \n sequences.
-  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, "\n");
+  const rawKey = process.env.FIREBASE_PRIVATE_KEY;
 
-  if (!projectId || !clientEmail || !privateKey) return null;
-  return { projectId, clientEmail, privateKey };
+  if (!projectId || !clientEmail || !rawKey) return null;
+  return { projectId, clientEmail, privateKey: normalizePrivateKey(rawKey) };
 }
 
 export function isFirestoreConfigured(): boolean {
@@ -72,10 +105,19 @@ async function getAccessToken(): Promise<string> {
     JSON.stringify(claim)
   )}`;
 
-  const signature = crypto
-    .createSign("RSA-SHA256")
-    .update(unsigned)
-    .sign(account.privateKey);
+  let signature: Buffer;
+  try {
+    signature = crypto.createSign("RSA-SHA256").update(unsigned).sign(account.privateKey);
+  } catch (error: any) {
+    // Say what is actually wrong, rather than passing on Node's opaque
+    // "DECODER routines::unsupported".
+    throw new Error(
+      "FIREBASE_PRIVATE_KEY could not be read as a private key. Copy the private_key " +
+        "value from the service-account JSON exactly, including the BEGIN and END lines. " +
+        "Do not include the surrounding quotes, and keep the \\n sequences intact. " +
+        `(${error?.message || "unknown error"})`
+    );
+  }
 
   const res = await fetch(TOKEN_URL, {
     method: "POST",

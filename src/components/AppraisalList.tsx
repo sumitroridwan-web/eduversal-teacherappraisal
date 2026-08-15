@@ -24,7 +24,6 @@ interface AppraisalListProps {
   onSelectAppraisal: (appraisal: TeacherAppraisalRecord) => void;
   onNewAppraisal: () => void;
   onDeleteAppraisal: (id: string) => void;
-  onResetSamples: () => void;
   onViewReport: (appraisal: TeacherAppraisalRecord) => void;
   onOpenRubrics: (level: CareerLevel) => void;
 }
@@ -34,7 +33,6 @@ export const AppraisalList: React.FC<AppraisalListProps> = ({
   onSelectAppraisal,
   onNewAppraisal,
   onDeleteAppraisal,
-  onResetSamples,
   onViewReport,
   onOpenRubrics,
 }) => {
@@ -81,16 +79,6 @@ export const AppraisalList: React.FC<AppraisalListProps> = ({
           </div>
 
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onResetSamples}
-              className="flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium rounded-xl border border-slate-200 transition cursor-pointer shadow-2xs"
-              title="Reset records to default Eduversal sample set"
-            >
-              <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
-              <span>Reset Samples</span>
-            </button>
-
             <button
               id="btn-new-appraisal"
               type="button"
