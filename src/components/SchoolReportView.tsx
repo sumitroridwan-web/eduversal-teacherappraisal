@@ -389,8 +389,10 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
                   These are the highest-leverage focus areas for departmental coaching and INSET
                   planning.
                 </p>
-                <ol className="list-decimal pl-4 text-xs text-slate-700 space-y-1">
-                  {report.priorityImprovements.map((p, i) => <li key={i}>{p}</li>)}
+                <ol className="list-decimal pl-4 text-xs text-slate-700 space-y-2">
+                  {report.priorityImprovements.map((p, i) => (
+                    <li key={i} className="leading-relaxed">{p}</li>
+                  ))}
                 </ol>
               </section>
             )}
@@ -401,17 +403,33 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
                 <h2 className="text-xs font-bold text-[#165963] uppercase tracking-wider pb-1 border-b border-slate-200 mb-3">
                   Best Practices to Share
                 </h2>
-                <ul className="space-y-1.5">
+                <p className="text-xs text-slate-500 mb-3">
+                  Practice flagged during observation as worth sharing across the department,
+                  shown with the evidence photographed at the time.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {report.bestPractices.map((b, i) => (
-                    <li key={i} className="flex items-start gap-2 text-xs text-slate-700">
-                      <Star className="w-3.5 h-3.5 text-amber-500 mt-0.5 shrink-0" />
-                      <span>
-                        {b.caption}{' '}
-                        <span className="text-slate-400">({b.teacherName})</span>
-                      </span>
-                    </li>
+                    <figure
+                      key={i}
+                      className="border border-amber-200 bg-amber-50/50 rounded-xl overflow-hidden flex gap-3"
+                    >
+                      {b.dataUrl && (
+                        <img
+                          src={b.dataUrl}
+                          alt={b.caption}
+                          className="w-24 h-24 object-cover shrink-0"
+                        />
+                      )}
+                      <figcaption className="py-2 pr-2 min-w-0">
+                        <span className="flex items-center gap-1 text-[11px] font-bold text-amber-800">
+                          <Star className="w-3 h-3 text-amber-500 shrink-0" />
+                          {b.teacherName}
+                        </span>
+                        <p className="text-xs text-slate-700 mt-0.5">{b.caption}</p>
+                      </figcaption>
+                    </figure>
                   ))}
-                </ul>
+                </div>
               </section>
             )}
           </>

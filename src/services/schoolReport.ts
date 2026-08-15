@@ -46,7 +46,7 @@ export interface SchoolReportData {
   domainAverages: Array<{ domain: string; score: number; rated: number }>;
   observations: ObservationSummary[];
   priorityImprovements: string[];
-  bestPractices: Array<{ caption: string; teacherName: string }>;
+  bestPractices: Array<{ caption: string; teacherName: string; dataUrl: string }>;
   totalNotObservable: number;
 }
 
@@ -91,8 +91,8 @@ export function buildSchoolReport(
   const domainTotals: Record<string, { sum: number; count: number }> = {};
   DOMAIN_BUCKETS.forEach((b) => (domainTotals[b.key] = { sum: 0, count: 0 }));
 
-  const improvementTally = new Map<string, number>();
-  const bestPractices: Array<{ caption: string; teacherName: string }> = [];
+  const improvementTally = new Map<string, { item: any; count: number; scores: number[] }>();
+  const bestPractices: Array<{ caption: string; teacherName: string; dataUrl: string }> = [];
 
   let percentageSum = 0;
   let totalNotObservable = 0;
@@ -131,7 +131,10 @@ export function buildSchoolReport(
       if (score >= 3) strong.push({ title: item.title, score });
       if (score <= 2) {
         weak.push({ title: item.title, score, note: entry?.notes || '' });
-        improvementTally.set(item.title, (improvementTally.get(item.title) || 0) + 1);
+        const tallied = improvementTally.get(item.id) || { item, count: 0, scores: [] };
+        tallied.count += 1;
+        tallied.scores.push(score);
+        improvementTally.set(item.id, tallied);
       }
     });
 
@@ -140,7 +143,11 @@ export function buildSchoolReport(
     (record.photos || [])
       .filter((p) => p.isBestPractice && p.caption.trim())
       .forEach((p) =>
-        bestPractices.push({ caption: p.caption.trim(), teacherName: record.teacherName })
+        bestPractices.push({
+          caption: p.caption.trim(),
+          teacherName: record.teacherName || 'Unnamed teacher',
+          dataUrl: p.dataUrl,
+        })
       );
 
     return {
@@ -184,14 +191,21 @@ export function buildSchoolReport(
     };
   });
 
-  const priorityImprovements = [...improvementTally.entries()]
-    .sort((a, b) => b[1] - a[1])
+  // A priority is only useful if it says what to do about it, so each one
+  // pairs the finding with the rubric's own committed next step.
+  const priorityImprovements = [...improvementTally.values()]
+    .sort((a, b) => b.count - a.count)
     .slice(0, 6)
-    .map(([title, count]) =>
-      `${title} - rated Basic or below in ${count} of ${observations.length} observation${
-        observations.length === 1 ? '' : 's'
-      }`
-    );
+    .map((entry) => {
+      const finding =
+        `${entry.item.title} was rated Basic or below in ${entry.count} of ` +
+        `${observations.length} observation${observations.length === 1 ? '' : 's'}`;
+      const suggestion =
+        entry.item.goPrompt ||
+        `Agree a concrete change to ${entry.item.title.toLowerCase()} with each teacher concerned.`;
+      const reflection = entry.item.growPrompt ? ` Discussion prompt: ${entry.item.growPrompt}` : '';
+      return `${finding}. Suggested action: ${suggestion}${reflection}`;
+    });
 
   return {
     generatedAt: new Date().toISOString(),
@@ -247,6 +261,11 @@ const MARGIN = 18;
 const CONTENT_W = PAGE_W - MARGIN * 2;
 const TEAL = [22, 89, 99] as const;
 const SLATE = [71, 85, 105] as const;
+
+// Photos are embedded as bitmaps, so the document is capped to keep it small
+// enough to email. Anything beyond this is reported as a count, never dropped
+// silently.
+const MAX_REPORT_PHOTOS = 6;
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -456,7 +475,50 @@ export function generateSchoolReportPdf(
   // --- Best practices ---
   if (data.bestPractices.length) {
     heading('Best Practices to Share');
-    data.bestPractices.forEach((b) => body(`• ${b.caption} (${b.teacherName})`, 2));
+    body(
+      'Practice flagged during observation as worth sharing across the department, shown with the evidence photographed at the time.'
+    );
+    y += 2;
+
+    const THUMB = 26;
+    data.bestPractices.slice(0, MAX_REPORT_PHOTOS).forEach((b) => {
+      ensureSpace(THUMB + 4);
+      const top = y;
+      let textX = MARGIN;
+
+      if (b.dataUrl) {
+        try {
+          doc.addImage(b.dataUrl, 'JPEG', MARGIN, top, THUMB, THUMB, undefined, 'FAST');
+          textX = MARGIN + THUMB + 4;
+        } catch {
+          textX = MARGIN;
+        }
+      }
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(15, 23, 42);
+      doc.text(b.teacherName, textX, top + 4);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]);
+      let ty = top + 8.5;
+      doc.splitTextToSize(b.caption, PAGE_W - MARGIN - textX).forEach((line: string) => {
+        doc.text(line, textX, ty);
+        ty += 4.2;
+      });
+
+      y = Math.max(top + THUMB, ty) + 5;
+    });
+
+    if (data.bestPractices.length > MAX_REPORT_PHOTOS) {
+      body(
+        `${data.bestPractices.length - MAX_REPORT_PHOTOS} further best-practice photos were captured but are not shown here, to keep the file a manageable size.`,
+        2,
+        8
+      );
+    }
   }
 
   // --- Page furniture ---
@@ -546,6 +608,10 @@ export function generateSchoolReportDoc(
   p.glow { color: #10855f; margin: 6pt 0 0; }
   p.grow { color: #d97706; margin: 6pt 0 0; }
   p.go   { color: #4f46e5; margin: 6pt 0 0; }
+  p.who { font-weight: bold; margin: 0 0 2pt; }
+  table.bp { border: none; margin-bottom: 10pt; }
+  table.bp td { border: none; vertical-align: top; padding: 0 8pt 0 0; }
+  table.bp td.bpimg { width: 130px; }
 </style>
 </head>
 <body>
@@ -602,9 +668,32 @@ export function generateSchoolReportDoc(
 
   ${
     data.bestPractices.length
-      ? `<h2>Best Practices to Share</h2>${list(
-          data.bestPractices.map((b) => `${b.caption} (${b.teacherName})`)
-        )}`
+      ? `<h2>Best Practices to Share</h2>
+         <p>Practice flagged during observation as worth sharing across the department,
+         shown with the evidence photographed at the time.</p>
+         ${data.bestPractices
+           .slice(0, MAX_REPORT_PHOTOS)
+           .map(
+             (b) => `<table class="bp"><tr>
+               ${
+                 b.dataUrl
+                   ? `<td class="bpimg"><img src="${b.dataUrl}" width="120" alt="${escapeHtml(
+                       b.caption
+                     )}" /></td>`
+                   : ''
+               }
+               <td><p class="who">${escapeHtml(b.teacherName)}</p><p>${escapeHtml(
+               b.caption
+             )}</p></td></tr></table>`
+           )
+           .join('')}
+         ${
+           data.bestPractices.length > MAX_REPORT_PHOTOS
+             ? `<p><em>${
+                 data.bestPractices.length - MAX_REPORT_PHOTOS
+               } further best-practice photos were captured but are not shown here, to keep the file a manageable size.</em></p>`
+             : ''
+         }`
       : ''
   }
 

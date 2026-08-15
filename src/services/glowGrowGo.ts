@@ -18,11 +18,48 @@ const SCORE_LABEL: Record<number, string> = {
 interface RatedItem {
   item: AppraisalItem;
   score: number;
+  notes: string;
+}
+
+const MAX_SENTENCE = 210;
+
+function trim(text: string): string {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  if (clean.length <= MAX_SENTENCE) return clean;
+  const cut = clean.slice(0, MAX_SENTENCE);
+  return `${cut.slice(0, cut.lastIndexOf(' ') || MAX_SENTENCE)}…`;
+}
+
+/**
+ * Describes what the teacher actually did for this indicator.
+ *
+ * The appraiser's own note is the best evidence there is, so it wins. Failing
+ * that, the rubric descriptor for the level awarded says what that standard
+ * looks like in practice - which is still a description of the teaching, not
+ * just the name of the component being judged.
+ */
+function describePractice(rated: RatedItem): string {
+  const note = rated.notes
+    .replace(/^\[Auto-Graded\]\s*/i, '')
+    .replace(/\s*Evidence\s*-\s*[\s\S]*$/i, '')
+    .trim();
+
+  if (note.length > 25) return trim(`${rated.item.title}: ${note}`);
+
+  const descriptor = rated.item.descriptors?.[rated.score as 1 | 2 | 3 | 4];
+  if (descriptor) {
+    return trim(`${rated.item.title}: ${descriptor.charAt(0).toLowerCase()}${descriptor.slice(1)}`);
+  }
+  return trim(`${rated.item.title}: ${SCORE_LABEL[rated.score]} — ${rated.item.coachingFocus}.`);
 }
 
 function ratedItems(record: TeacherAppraisalRecord): RatedItem[] {
   return getItemsForLevel(record.careerLevel)
-    .map((item) => ({ item, score: record.scores?.[item.id]?.score as number }))
+    .map((item) => ({
+      item,
+      score: record.scores?.[item.id]?.score as number,
+      notes: record.scores?.[item.id]?.notes || '',
+    }))
     .filter((r) => typeof r.score === 'number');
 }
 
@@ -71,9 +108,7 @@ export function generateGlowGrowGo(record: TeacherAppraisalRecord): GlowGrowGo {
     .sort((a, b) => a.score - b.score || a.item.id.localeCompare(b.item.id));
 
   const glow = unique(
-    strengths
-      .slice(0, MAX_FEEDBACK_ITEMS)
-      .map((r) => `${r.item.title}: ${SCORE_LABEL[r.score]} — ${r.item.coachingFocus}.`)
+    strengths.slice(0, MAX_FEEDBACK_ITEMS).map(describePractice)
   ).slice(0, MAX_FEEDBACK_ITEMS);
 
   const grow = unique(
