@@ -15,7 +15,6 @@ import {
   Building2,
   Sparkles,
   ChevronDown,
-  FileText,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -40,7 +39,6 @@ import {
 } from 'recharts';
 import { TeacherAppraisalRecord, SchoolLevel, SubjectCategory, CareerLevel, ItemScoreRecord, EDUVERSAL_SCHOOLS } from '../types';
 import { calculateF2Scores, calculateF2Predicate } from '../data/frameworkRubrics';
-import { SchoolReportModal } from './SchoolReportModal';
 
 interface OverviewAnalyticsProps {
   appraisals: TeacherAppraisalRecord[];
@@ -68,7 +66,6 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activeGraphTab, setActiveGraphTab] = useState<GraphTab>('overview');
-  const [showSchoolReport, setShowSchoolReport] = useState(false);
 
   const ActiveViewIcon =
     GRAPH_TAB_OPTIONS.find((o) => o.value === activeGraphTab)?.icon ?? PieIcon;
@@ -458,17 +455,6 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
             <p className="text-xs text-slate-500 mt-0.5">
               Explore multi-dimensional data distributions, school benchmarks, and rubric domain masteries.
             </p>
-          </div>
-
-          <div className="flex items-center gap-2 sm:min-w-[260px]">
-            <button
-              type="button"
-              onClick={() => setShowSchoolReport(true)}
-              className="flex items-center gap-1.5 px-3 py-2.5 bg-[#165963] hover:bg-[#11474f] text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-sm whitespace-nowrap"
-            >
-              <FileText className="w-3.5 h-3.5" />
-              School Report
-            </button>
           </div>
 
           <div className="sm:min-w-[260px]">
@@ -1031,11 +1017,6 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
           </table>
         </div>
       </div>
-      <SchoolReportModal
-        isOpen={showSchoolReport}
-        onClose={() => setShowSchoolReport(false)}
-        appraisals={appraisals}
-      />
     </div>
   );
 };

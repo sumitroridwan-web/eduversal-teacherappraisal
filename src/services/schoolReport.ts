@@ -201,6 +201,31 @@ export function buildSchoolReport(
   };
 }
 
+/**
+ * Loads the Eduversal mark as a data URL so it can be embedded directly in
+ * generated documents. Cached after the first call; resolves to null if the
+ * asset cannot be read, in which case documents render without it.
+ */
+let logoCache: string | null | undefined;
+
+export async function loadLogoDataUrl(): Promise<string | null> {
+  if (logoCache !== undefined) return logoCache;
+  try {
+    const res = await fetch('/eduversal-logo.png');
+    if (!res.ok) throw new Error(String(res.status));
+    const blob = await res.blob();
+    logoCache = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    logoCache = null;
+  }
+  return logoCache;
+}
+
 /* ------------------------------------------------------------------ *
  * PDF
  * Drawn with the jsPDF text API rather than a canvas snapshot, so the
@@ -221,7 +246,10 @@ function formatDate(iso: string): string {
     : d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
-export function generateSchoolReportPdf(data: SchoolReportData): jsPDF {
+export function generateSchoolReportPdf(
+  data: SchoolReportData,
+  logoDataUrl?: string | null
+): jsPDF {
   const doc = new jsPDF('p', 'mm', 'a4');
   let y = MARGIN;
 
@@ -257,17 +285,39 @@ export function generateSchoolReportPdf(data: SchoolReportData): jsPDF {
     });
   };
 
-  // --- Title block ---
-  doc.setFillColor(TEAL[0], TEAL[1], TEAL[2]);
-  doc.rect(0, 0, PAGE_W, 26, 'F');
-  doc.setTextColor(255, 255, 255);
+  // --- Title block: logo left, title beside it, teal rule beneath ---
+  const logoSize = 20;
+  let textLeft = MARGIN;
+
+  if (logoDataUrl) {
+    try {
+      // 'FAST' compresses the bitmap; without it jsPDF embeds it raw and the
+      // logo alone adds ~360KB to every report.
+      doc.addImage(logoDataUrl, 'PNG', MARGIN, 10, logoSize, logoSize, undefined, 'FAST');
+      textLeft = MARGIN + logoSize + 6;
+    } catch {
+      // A malformed image must not stop the report being produced.
+      textLeft = MARGIN;
+    }
+  }
+
+  doc.setTextColor(TEAL[0], TEAL[1], TEAL[2]);
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(15);
-  doc.text('EDUVERSAL SCHOOL OBSERVATION REPORT', MARGIN, 13);
+  doc.text('SCHOOL OBSERVATION REPORT', textLeft, 18);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
-  doc.text('Framework 2 - Classroom Observation & Quality Assurance', MARGIN, 19.5);
-  y = 34;
+  doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]);
+  doc.text(
+    'Eduversal Partner Schools - Framework 2 Classroom Observation & Quality Assurance',
+    textLeft,
+    24
+  );
+
+  doc.setDrawColor(TEAL[0], TEAL[1], TEAL[2]);
+  doc.setLineWidth(0.6);
+  doc.line(MARGIN, 34, PAGE_W - MARGIN, 34);
+  y = 42;
 
   doc.setTextColor(15, 23, 42);
   doc.setFont('helvetica', 'bold');
@@ -447,7 +497,10 @@ function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
-export function generateSchoolReportDoc(data: SchoolReportData): Blob {
+export function generateSchoolReportDoc(
+  data: SchoolReportData,
+  logoDataUrl?: string | null
+): Blob {
   const list = (items: string[]) =>
     items.length ? `<ul>${items.map((i) => `<li>${escapeHtml(i)}</li>`).join('')}</ul>` : '';
 
@@ -505,6 +558,11 @@ export function generateSchoolReportDoc(data: SchoolReportData): Blob {
 </style>
 </head>
 <body>
+  ${
+    logoDataUrl
+      ? `<p style="margin:0 0 6pt"><img src="${logoDataUrl}" width="90" height="90" alt="Eduversal" /></p>`
+      : ''
+  }
   <h1>Eduversal School Observation Report</h1>
   <p class="sub">Framework 2 &ndash; Classroom Observation &amp; Quality Assurance<br />
   <strong>${escapeHtml(data.scopeLine)}</strong><br />

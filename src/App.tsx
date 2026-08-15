@@ -13,12 +13,13 @@ import { AppraisalForm } from './components/AppraisalForm';
 import { AppraisalList } from './components/AppraisalList';
 import { OverviewAnalytics } from './components/OverviewAnalytics';
 import { ReportView } from './components/ReportView';
+import { SchoolReportView } from './components/SchoolReportView';
 import { RubricReferenceModal } from './components/RubricReferenceModal';
 
 export default function App() {
   const [appraisals, setAppraisals] = useState<TeacherAppraisalRecord[]>([]);
   const [currentAppraisal, setCurrentAppraisal] = useState<TeacherAppraisalRecord | null>(null);
-  const [currentView, setCurrentView] = useState<'FORM' | 'LIST' | 'ANALYTICS' | 'REPORT'>('LIST');
+  const [currentView, setCurrentView] = useState<'FORM' | 'LIST' | 'ANALYTICS' | 'REPORT' | 'SCHOOL_REPORT'>('LIST');
   const [isRubricModalOpen, setIsRubricModalOpen] = useState(false);
   const [rubricLevel, setRubricLevel] = useState<CareerLevel>('Proficient');
 
@@ -154,6 +155,8 @@ export default function App() {
             </div>
           )
         )}
+
+        {currentView === 'SCHOOL_REPORT' && <SchoolReportView appraisals={appraisals} />}
 
         {currentView === 'ANALYTICS' && (
           <OverviewAnalytics

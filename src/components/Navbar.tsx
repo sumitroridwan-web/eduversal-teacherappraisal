@@ -7,12 +7,13 @@ import {
   ShieldCheck,
   Award,
   Lock,
+  FileText,
 } from 'lucide-react';
 import { EduversalLogo } from './EduversalLogo';
 
 interface NavbarProps {
-  currentView: 'FORM' | 'LIST' | 'ANALYTICS' | 'REPORT';
-  onChangeView: (view: 'FORM' | 'LIST' | 'ANALYTICS') => void;
+  currentView: 'FORM' | 'LIST' | 'ANALYTICS' | 'REPORT' | 'SCHOOL_REPORT';
+  onChangeView: (view: 'FORM' | 'LIST' | 'ANALYTICS' | 'SCHOOL_REPORT') => void;
   onNewAppraisal: () => void;
   onOpenRubrics: () => void;
   hasActiveRecord: boolean;
@@ -107,6 +108,20 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <BarChart3 className="w-3.5 h-3.5" />
                 <span>Overview &amp; School Levels</span>
               </button>
+
+              <button
+                id="nav-btn-school-report"
+                type="button"
+                onClick={() => onChangeView('SCHOOL_REPORT')}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-medium transition cursor-pointer ${
+                  currentView === 'SCHOOL_REPORT'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>School Report</span>
+              </button>
             </nav>
 
             {/* Right Action Tools & CTAs */}
@@ -199,6 +214,19 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           <BarChart3 className="w-5 h-5 mb-0.5" />
           <span>Analytics</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onChangeView('SCHOOL_REPORT')}
+          className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl font-medium transition cursor-pointer min-h-[44px] min-w-[60px] ${
+            currentView === 'SCHOOL_REPORT'
+              ? 'text-indigo-600 font-bold bg-indigo-50/80'
+              : 'text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <FileText className="w-5 h-5 mb-0.5" />
+          <span>Report</span>
         </button>
 
         <button
