@@ -52,6 +52,7 @@ import { ClassroomPhotoEvidence } from './ClassroomPhotoEvidence';
 import { AutoGradeModal } from './AutoGradeModal';
 import { executeAutoGrade } from '../services/autoGrader';
 import { saveOrUpdateAppraisal } from '../services/storage';
+import { generateGlowGrowGo, MAX_FEEDBACK_ITEMS } from '../services/glowGrowGo';
 
 interface AppraisalFormProps {
   initialRecord: TeacherAppraisalRecord;
@@ -388,9 +389,30 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
     setTimeout(() => setSavedSuccessAlert(false), 3500);
   };
 
+  // Build the debrief from the ratings actually given
+  const handleGenerateFeedback = () => {
+    const generated = generateGlowGrowGo(record);
+    const existing =
+      record.feedback.glow.length + record.feedback.grow.length + record.feedback.go.length;
+
+    if (existing > 0) {
+      const proceed = window.confirm(
+        'Replace the current Glow / Grow / Go entries with ones generated from the ratings?\n\n' +
+          'Anything you have written here will be lost.'
+      );
+      if (!proceed) return;
+    }
+
+    setRecord((prev) => ({ ...prev, feedback: generated }));
+  };
+
+  const feedbackFull = (type: 'glow' | 'grow' | 'go') =>
+    record.feedback[type].length >= MAX_FEEDBACK_ITEMS;
+
   // Add Glow / Grow / Go items
   const addGlow = () => {
     if (!newGlow.trim()) return;
+    if (feedbackFull('glow')) return;
     setRecord((prev) => ({
       ...prev,
       feedback: { ...prev.feedback, glow: [...prev.feedback.glow, newGlow.trim()] },
@@ -400,6 +422,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
 
   const addGrow = () => {
     if (!newGrow.trim()) return;
+    if (feedbackFull('grow')) return;
     setRecord((prev) => ({
       ...prev,
       feedback: { ...prev.feedback, grow: [...prev.feedback.grow, newGrow.trim()] },
@@ -409,6 +432,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
 
   const addGo = () => {
     if (!newGo.trim()) return;
+    if (feedbackFull('go')) return;
     setRecord((prev) => ({
       ...prev,
       feedback: { ...prev.feedback, go: [...prev.feedback.go, newGo.trim()] },
@@ -1212,9 +1236,22 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
                 Official Eduversal Debriefing
               </span>
             </h2>
-            <p className="text-xs text-slate-500 mt-1">
-              Structured feedback grounded in observed rubric evidence, reflective developmental questions, and agreed time-bound next steps.
-            </p>
+            <div className="flex flex-wrap items-end justify-between gap-3">
+              <p className="text-xs text-slate-500 mt-1 max-w-2xl">
+                Structured feedback grounded in observed rubric evidence, reflective developmental
+                questions, and agreed time-bound next steps. Up to {MAX_FEEDBACK_ITEMS} entries per
+                column, so the debrief stays short enough to discuss.
+              </p>
+              <button
+                type="button"
+                onClick={handleGenerateFeedback}
+                className="flex items-center gap-2 px-4 py-2 bg-[#165963] hover:bg-[#11474f] text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-sm whitespace-nowrap"
+                title="Build Glow / Grow / Go from the indicator ratings you have given"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Generate from Ratings
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1226,7 +1263,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
                     Glow (Observed Strengths)
                   </span>
-                  <span className="text-xs text-emerald-600 font-medium">{record.feedback.glow.length} entries</span>
+                  <span className="text-xs text-emerald-600 font-medium">{record.feedback.glow.length} / {MAX_FEEDBACK_ITEMS}</span>
                 </div>
 
                 <div className="space-y-2 mb-4">
@@ -1255,12 +1292,14 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
                   value={newGlow}
                   onChange={(e) => setNewGlow(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && addGlow()}
-                  placeholder="Add specific strength with descriptor evidence..."
+                  placeholder={feedbackFull('glow') ? `Maximum ${MAX_FEEDBACK_ITEMS} entries reached` : 'Add specific strength with descriptor evidence...'}
+                  disabled={feedbackFull('glow')}
                   className="flex-1 bg-white text-xs text-slate-900 px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-2xs"
                 />
                 <button
                   type="button"
                   onClick={addGlow}
+                  disabled={feedbackFull('glow')}
                   className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold cursor-pointer shadow-sm"
                 >
                   <Plus className="w-4 h-4" />
@@ -1276,7 +1315,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
                     <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
                     Grow (Reflective Questions)
                   </span>
-                  <span className="text-xs text-amber-600 font-medium">{record.feedback.grow.length} entries</span>
+                  <span className="text-xs text-amber-600 font-medium">{record.feedback.grow.length} / {MAX_FEEDBACK_ITEMS}</span>
                 </div>
 
                 <div className="space-y-2 mb-4">
@@ -1305,12 +1344,14 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
                   value={newGrow}
                   onChange={(e) => setNewGrow(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && addGrow()}
-                  placeholder="Add developmental reflective question..."
+                  placeholder={feedbackFull('grow') ? `Maximum ${MAX_FEEDBACK_ITEMS} entries reached` : 'Add developmental reflective question...'}
+                  disabled={feedbackFull('grow')}
                   className="flex-1 bg-white text-xs text-slate-900 px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-2xs"
                 />
                 <button
                   type="button"
                   onClick={addGrow}
+                  disabled={feedbackFull('grow')}
                   className="px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-semibold cursor-pointer shadow-sm"
                 >
                   <Plus className="w-4 h-4" />
@@ -1326,7 +1367,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
                     <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" />
                     Go (Agreed Next Steps)
                   </span>
-                  <span className="text-xs text-indigo-600 font-medium">{record.feedback.go.length} entries</span>
+                  <span className="text-xs text-indigo-600 font-medium">{record.feedback.go.length} / {MAX_FEEDBACK_ITEMS}</span>
                 </div>
 
                 <div className="space-y-2 mb-4">
@@ -1355,12 +1396,14 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
                   value={newGo}
                   onChange={(e) => setNewGo(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && addGo()}
-                  placeholder="Add concrete time-bound next step..."
+                  placeholder={feedbackFull('go') ? `Maximum ${MAX_FEEDBACK_ITEMS} entries reached` : 'Add concrete time-bound next step...'}
+                  disabled={feedbackFull('go')}
                   className="flex-1 bg-white text-xs text-slate-900 px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs"
                 />
                 <button
                   type="button"
                   onClick={addGo}
+                  disabled={feedbackFull('go')}
                   className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold cursor-pointer shadow-sm"
                 >
                   <Plus className="w-4 h-4" />

@@ -1,5 +1,6 @@
 import { TeacherAppraisalRecord, AutoGradeResult, CareerLevel, LessonActivity } from '../types';
-import { getItemsForLevel, LEVEL_SCORING_CONFIGS } from '../data/frameworkRubrics';
+import { getItemsForLevel } from '../data/frameworkRubrics';
+import { MAX_FEEDBACK_ITEMS } from './glowGrowGo';
 
 /**
  * Auto-grades a lesson observation using either Gemini AI backend or
@@ -320,10 +321,12 @@ function executeRuleBasedAutoGrade(
   const observed = scoredList.filter((s) => typeof s.score === 'number');
   const notObservable = scoredList.length - observed.length;
 
+  // Keep the debrief lines short. The full evidence citation stays attached to
+  // the indicator itself; repeating it here made entries unreadable.
   const glow = observed
     .filter((s) => (s.score || 0) >= 3)
-    .slice(0, 3)
-    .map((s) => `${s.title}: ${s.rationale}`);
+    .slice(0, MAX_FEEDBACK_ITEMS)
+    .map((s) => `${s.title}: ${s.score === 4 ? 'Distinguished' : 'Proficient'} practice evidenced.`);
 
   const grow = notObservable
     ? [
@@ -353,7 +356,12 @@ function executeRuleBasedAutoGrade(
   return calculateAutoGradeSummary(
     record.careerLevel,
     scoredList,
-    { glow, grow, go, summaryEvaluation },
+    {
+      glow,
+      grow: grow.slice(0, MAX_FEEDBACK_ITEMS),
+      go: go.slice(0, MAX_FEEDBACK_ITEMS),
+      summaryEvaluation,
+    },
     activities.length
   );
 }
@@ -412,9 +420,11 @@ function calculateAutoGradeSummary(
     observedCount,
     notObservableCount: enrichedScores.length - observedCount,
     totalIndicatorCount: enrichedScores.length,
-    glow: extraData.glow || [],
-    grow: extraData.grow || [],
-    go: extraData.go || [],
+    // Capped regardless of source: the model can return a long list, and the
+    // debrief has to stay discussable.
+    glow: (extraData.glow || []).slice(0, MAX_FEEDBACK_ITEMS),
+    grow: (extraData.grow || []).slice(0, MAX_FEEDBACK_ITEMS),
+    go: (extraData.go || []).slice(0, MAX_FEEDBACK_ITEMS),
     summaryEvaluation:
       extraData.summaryEvaluation || extraData.summary || 'Appraisal evaluation generated.',
     activitiesEvaluatedCount: activitiesCount,

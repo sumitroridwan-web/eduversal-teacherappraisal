@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import { TeacherAppraisalRecord } from '../types';
 import { calculateF2Scores, calculateF2Predicate, getItemsForLevel } from '../data/frameworkRubrics';
+import { MAX_FEEDBACK_ITEMS } from './glowGrowGo';
 
 export interface SchoolReportFilters {
   academicYear: string;
@@ -27,9 +28,12 @@ export interface ObservationSummary {
   predicate: string;
   ratedCount: number;
   notObservableCount: number;
-  strengths: string[];
-  improvementAreas: string[];
-  growthActions: string[];
+  /** The Glow / Grow / Go debrief actually agreed with the teacher. */
+  glow: string[];
+  grow: string[];
+  go: string[];
+  /** Indicators that fell to Basic or below, used for the cohort priorities. */
+  weakIndicators: string[];
 }
 
 export interface SchoolReportData {
@@ -154,15 +158,20 @@ export function buildSchoolReport(
       predicate: band.predicate,
       ratedCount,
       notObservableCount: notObservable,
-      strengths: strong
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 3)
-        .map((s) => s.title),
-      improvementAreas: weak
+      // Reported as the debrief the teacher received. Where a column is empty,
+      // the rubric evidence stands in so the section is not simply blank.
+      glow: (record.feedback?.glow?.length
+        ? record.feedback.glow
+        : strong
+            .sort((a, b) => b.score - a.score)
+            .map((s) => `${s.title}: rated ${s.score}.`)
+      ).slice(0, MAX_FEEDBACK_ITEMS),
+      grow: (record.feedback?.grow || []).slice(0, MAX_FEEDBACK_ITEMS),
+      go: (record.feedback?.go || []).slice(0, MAX_FEEDBACK_ITEMS),
+      weakIndicators: weak
         .sort((a, b) => a.score - b.score)
-        .slice(0, 3)
+        .slice(0, MAX_FEEDBACK_ITEMS)
         .map((w) => `${w.title} (rated ${w.score})`),
-      growthActions: [...(record.feedback?.grow || []), ...(record.feedback?.go || [])].slice(0, 3),
     };
   });
 
@@ -412,35 +421,22 @@ export function generateSchoolReportPdf(
         8.5
       );
 
-      if (o.strengths.length) {
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(8.5);
-        doc.setTextColor(15, 23, 42);
-        ensureSpace(5);
-        doc.text('Strengths:', MARGIN, y);
-        y += 4;
-        o.strengths.forEach((s) => body(`• ${s}`, 4, 8.5));
-      }
+      const protocol: Array<[string, string[], readonly [number, number, number]]> = [
+        ['GLOW — observed strengths', o.glow, [16, 133, 96]],
+        ['GROW — reflective questions', o.grow, [217, 119, 6]],
+        ['GO — agreed next steps', o.go, [79, 70, 229]],
+      ];
 
-      if (o.improvementAreas.length) {
+      protocol.forEach(([label, entries, colour]) => {
+        if (!entries.length) return;
+        ensureSpace(6);
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(8.5);
-        doc.setTextColor(15, 23, 42);
-        ensureSpace(5);
-        doc.text('Areas for improvement:', MARGIN, y);
+        doc.setTextColor(colour[0], colour[1], colour[2]);
+        doc.text(label, MARGIN, y);
         y += 4;
-        o.improvementAreas.forEach((s) => body(`• ${s}`, 4, 8.5));
-      }
-
-      if (o.growthActions.length) {
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(8.5);
-        doc.setTextColor(15, 23, 42);
-        ensureSpace(5);
-        doc.text('Agreed next steps:', MARGIN, y);
-        y += 4;
-        o.growthActions.forEach((s) => body(`• ${s}`, 4, 8.5));
-      }
+        entries.forEach((entry) => body(`• ${entry}`, 4, 8.5));
+      });
 
       y += 4;
     });
@@ -517,17 +513,9 @@ export function generateSchoolReportDoc(
         ${o.ratedCount} indicators rated${
           o.notObservableCount ? `, ${o.notObservableCount} not observable` : ''
         }.</p>
-        ${o.strengths.length ? `<p><strong>Strengths</strong></p>${list(o.strengths)}` : ''}
-        ${
-          o.improvementAreas.length
-            ? `<p><strong>Areas for improvement</strong></p>${list(o.improvementAreas)}`
-            : ''
-        }
-        ${
-          o.growthActions.length
-            ? `<p><strong>Agreed next steps</strong></p>${list(o.growthActions)}`
-            : ''
-        }
+        ${o.glow.length ? `<p class="glow"><strong>Glow &ndash; observed strengths</strong></p>${list(o.glow)}` : ''}
+        ${o.grow.length ? `<p class="grow"><strong>Grow &ndash; reflective questions</strong></p>${list(o.grow)}` : ''}
+        ${o.go.length ? `<p class="go"><strong>Go &ndash; agreed next steps</strong></p>${list(o.go)}` : ''}
       </div>`
     )
     .join('');
@@ -555,6 +543,9 @@ export function generateSchoolReportDoc(
   th { background: #f1f5f9; }
   ul { margin: 2pt 0 6pt 16pt; }
   .obs { margin-bottom: 10pt; }
+  p.glow { color: #10855f; margin: 6pt 0 0; }
+  p.grow { color: #d97706; margin: 6pt 0 0; }
+  p.go   { color: #4f46e5; margin: 6pt 0 0; }
 </style>
 </head>
 <body>

@@ -333,34 +333,46 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
                       {o.notObservableCount ? `, ${o.notObservableCount} not observable` : ''}.
                     </p>
 
-                    {o.strengths.length > 0 && (
-                      <div className="mt-2">
-                        <div className="text-[11px] font-bold text-slate-800">Strengths</div>
-                        <ul className="list-disc pl-4 text-xs text-slate-600 space-y-0.5 mt-0.5">
-                          {o.strengths.map((s, k) => <li key={k}>{s}</li>)}
-                        </ul>
-                      </div>
-                    )}
-
-                    {o.improvementAreas.length > 0 && (
-                      <div className="mt-2">
-                        <div className="text-[11px] font-bold text-slate-800">
-                          Areas for improvement
-                        </div>
-                        <ul className="list-disc pl-4 text-xs text-slate-600 space-y-0.5 mt-0.5">
-                          {o.improvementAreas.map((s, k) => <li key={k}>{s}</li>)}
-                        </ul>
-                      </div>
-                    )}
-
-                    {o.growthActions.length > 0 && (
-                      <div className="mt-2">
-                        <div className="text-[11px] font-bold text-slate-800">Agreed next steps</div>
-                        <ul className="list-disc pl-4 text-xs text-slate-600 space-y-0.5 mt-0.5">
-                          {o.growthActions.map((s, k) => <li key={k}>{s}</li>)}
-                        </ul>
-                      </div>
-                    )}
+                    {/* Reported as the Glow / Grow / Go the teacher was given */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-2.5">
+                      {([
+                        ['Glow', 'observed strengths', o.glow, 'emerald'],
+                        ['Grow', 'reflective questions', o.grow, 'amber'],
+                        ['Go', 'agreed next steps', o.go, 'indigo'],
+                      ] as const).map(([label, caption, entries, tone]) =>
+                        entries.length ? (
+                          <div
+                            key={label}
+                            className={`rounded-lg border p-2.5 ${
+                              tone === 'emerald'
+                                ? 'bg-emerald-50/50 border-emerald-200'
+                                : tone === 'amber'
+                                ? 'bg-amber-50/50 border-amber-200'
+                                : 'bg-indigo-50/50 border-indigo-200'
+                            }`}
+                          >
+                            <div
+                              className={`text-[10px] font-bold uppercase tracking-wider ${
+                                tone === 'emerald'
+                                  ? 'text-emerald-800'
+                                  : tone === 'amber'
+                                  ? 'text-amber-800'
+                                  : 'text-indigo-800'
+                              }`}
+                            >
+                              {label}
+                              <span className="font-normal normal-case text-slate-500">
+                                {' '}
+                                — {caption}
+                              </span>
+                            </div>
+                            <ul className="list-disc pl-4 text-xs text-slate-600 space-y-0.5 mt-1">
+                              {entries.map((s, k) => <li key={k}>{s}</li>)}
+                            </ul>
+                          </div>
+                        ) : null
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
