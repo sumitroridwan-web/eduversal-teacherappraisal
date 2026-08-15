@@ -40,3 +40,21 @@ the browser bundle.
 
 When deploying, set `APP_PASSWORD` in the hosting environment's secrets —
 never commit it, as this repository is public.
+
+## Deploying to Vercel
+
+The frontend is served from `dist/` by Vercel's CDN and the API runs as a
+serverless function ([api/index.ts](api/index.ts), which re-exports the Express
+app in [app.ts](app.ts)). [vercel.json](vercel.json) rewrites `/api/*` to the
+function and everything else to the SPA.
+
+Set these in **Project → Settings → Environment Variables**, then redeploy:
+
+| Variable | Required | Notes |
+| --- | --- | --- |
+| `APP_PASSWORD` | Yes | Nobody can sign in until this is set. |
+| `APP_SESSION_SECRET` | Yes | On serverless each instance would otherwise generate its own signing key, so sessions break at random. `openssl rand -hex 32` |
+| `GEMINI_API_KEY` | For AI features | The AI endpoints return an error without it. |
+
+Note that `npm start` / [server.ts](server.ts) is only for local and
+self-hosted use; Vercel never runs it.

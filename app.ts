@@ -1,0 +1,519 @@
+/**
+ * The Eduversal API: the access gate plus the Gemini-backed endpoints.
+ *
+ * Deliberately free of any HTTP listener or dev-server wiring so it can be
+ * mounted in two places: server.ts runs it locally, and api/index.ts exposes
+ * it as a Vercel serverless function.
+ */
+import "dotenv/config";
+import express, { NextFunction, Request, Response } from "express";
+import crypto from "crypto";
+import { GoogleGenAI, Type } from "@google/genai";
+
+const app = express();
+
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+
+/* ------------------------------------------------------------------ *
+ * Access gate
+ *
+ * The platform password is read from APP_PASSWORD and is never sent to
+ * the browser - the client only ever posts a candidate password and
+ * receives a signed, expiring session cookie in return.
+ * ------------------------------------------------------------------ */
+
+const SESSION_COOKIE = "eduversal_session";
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
+
+// Signing key for session cookies. Set APP_SESSION_SECRET to keep sessions
+// valid across restarts; otherwise a fresh key is generated at boot and
+// everyone is signed out when the server restarts.
+const SESSION_SECRET =
+  process.env.APP_SESSION_SECRET || crypto.randomBytes(32).toString("hex");
+
+if (!process.env.APP_SESSION_SECRET) {
+  console.warn(
+    "APP_SESSION_SECRET is not set - session cookies are signed with a key " +
+      "generated at startup. On serverless hosting every instance generates " +
+      "its own key, so users get signed out unpredictably. Set it in production."
+  );
+}
+
+if (!process.env.APP_PASSWORD) {
+  console.warn(
+    "APP_PASSWORD is not set - the access gate is closed and nobody can sign in."
+  );
+}
+
+function getAppPassword(): string | null {
+  const pw = process.env.APP_PASSWORD;
+  return pw && pw.length > 0 ? pw : null;
+}
+
+function sign(value: string): string {
+  return crypto.createHmac("sha256", SESSION_SECRET).update(value).digest("hex");
+}
+
+function issueToken(): string {
+  const expiresAt = String(Date.now() + SESSION_TTL_MS);
+  return `${expiresAt}.${sign(expiresAt)}`;
+}
+
+function isValidToken(token: string | undefined): boolean {
+  if (!token) return false;
+  const [expiresAt, signature] = token.split(".");
+  if (!expiresAt || !signature) return false;
+
+  const expected = sign(expiresAt);
+  if (
+    signature.length !== expected.length ||
+    !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
+  ) {
+    return false;
+  }
+  return Number(expiresAt) > Date.now();
+}
+
+function readCookie(req: Request, name: string): string | undefined {
+  const header = req.headers.cookie;
+  if (!header) return undefined;
+  for (const part of header.split(";")) {
+    const idx = part.indexOf("=");
+    if (idx === -1) continue;
+    if (part.slice(0, idx).trim() === name) {
+      return decodeURIComponent(part.slice(idx + 1).trim());
+    }
+  }
+  return undefined;
+}
+
+function isAuthenticated(req: Request): boolean {
+  return isValidToken(readCookie(req, SESSION_COOKIE));
+}
+
+// Compare in constant time so response timing does not leak the password.
+function passwordMatches(candidate: string, actual: string): boolean {
+  const a = crypto.createHash("sha256").update(candidate).digest();
+  const b = crypto.createHash("sha256").update(actual).digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
+// Throttle guessing: 10 failures per IP per 15 minutes.
+const MAX_ATTEMPTS = 10;
+const ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
+const failedAttempts = new Map<string, { count: number; firstAt: number }>();
+
+function attemptsExceeded(ip: string): boolean {
+  const entry = failedAttempts.get(ip);
+  if (!entry) return false;
+  if (Date.now() - entry.firstAt > ATTEMPT_WINDOW_MS) {
+    failedAttempts.delete(ip);
+    return false;
+  }
+  return entry.count >= MAX_ATTEMPTS;
+}
+
+function recordFailure(ip: string): void {
+  const entry = failedAttempts.get(ip);
+  if (!entry || Date.now() - entry.firstAt > ATTEMPT_WINDOW_MS) {
+    failedAttempts.set(ip, { count: 1, firstAt: Date.now() });
+  } else {
+    entry.count += 1;
+  }
+}
+
+function requireAuth(req: Request, res: Response, next: NextFunction) {
+  if (!isAuthenticated(req)) {
+    return res.status(401).json({ error: "Not authenticated." });
+  }
+  next();
+}
+
+// Is the gate switched on at all?
+app.get("/api/auth/session", (req, res) => {
+  res.json({
+    authenticated: isAuthenticated(req),
+    configured: getAppPassword() !== null,
+  });
+});
+
+app.post("/api/auth/login", (req, res) => {
+  const actual = getAppPassword();
+  if (!actual) {
+    return res.status(503).json({
+      error:
+        "No platform password is configured. Set APP_PASSWORD in the server environment.",
+    });
+  }
+
+  const ip = req.ip || "unknown";
+  if (attemptsExceeded(ip)) {
+    return res
+      .status(429)
+      .json({ error: "Too many failed attempts. Try again in 15 minutes." });
+  }
+
+  const candidate = typeof req.body?.password === "string" ? req.body.password : "";
+  if (!candidate || !passwordMatches(candidate, actual)) {
+    recordFailure(ip);
+    return res.status(401).json({ error: "Incorrect password." });
+  }
+
+  failedAttempts.delete(ip);
+  res.cookie(SESSION_COOKIE, issueToken(), {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: SESSION_TTL_MS,
+    path: "/",
+  });
+  res.json({ success: true });
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  res.clearCookie(SESSION_COOKIE, { path: "/" });
+  res.json({ success: true });
+});
+
+// Initialize Gemini AI Client
+function getGeminiClient(): GoogleGenAI | null {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    console.warn("GEMINI_API_KEY is not set.");
+    return null;
+  }
+  return new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      headers: {
+        "User-Agent": "aistudio-build",
+      },
+    },
+  });
+}
+
+// API Health
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+// API: Analyze Lesson Audio or Transcript
+app.post("/api/analyze-lesson", requireAuth, async (req, res) => {
+  try {
+    const ai = getGeminiClient();
+    if (!ai) {
+      return res.status(500).json({
+        error: "Gemini API key is not configured. Please check your environment variables.",
+      });
+    }
+
+    const {
+      audioBase64,
+      mimeType = "audio/webm",
+      transcript,
+      teacherName,
+      subject,
+      gradeLevel,
+      careerLevel,
+      lessonTopic,
+      learningObjectives,
+      additionalNotes,
+    } = req.body;
+
+    const parts: any[] = [];
+
+    // If audio is provided, attach as inlineData
+    if (audioBase64) {
+      parts.push({
+        inlineData: {
+          mimeType: mimeType || "audio/webm",
+          data: audioBase64,
+        },
+      });
+    }
+
+    const promptText = `
+You are an expert master educational consultant and senior appraiser for the Eduversal Teacher Appraisal Framework (Framework 2 - Classroom Observation).
+
+Analyze the provided lesson recording / transcript / observation details for:
+- Teacher: ${teacherName || "Observed Teacher"}
+- Subject: ${subject || "General Subject"}
+- Grade / Level: ${gradeLevel || "Standard"}
+- Career Level: ${careerLevel || "Proficient"} (Induction, Developing, Proficient, Lead, or Early Years)
+- Lesson Topic: ${lessonTopic || "Topic not specified"}
+- Learning Objectives: ${learningObjectives || "Standard curriculum objectives"}
+- Observer Live Notes: ${additionalNotes || "None"}
+${transcript ? `- Full Lesson Audio Transcription / Dialogue Notes:\n"${transcript}"` : ""}
+
+Evaluate the classroom instruction thoroughly based on Framework 2:
+1. Domain 1: Lesson Planning & Objective Alignment
+2. Domain 2: Classroom Management & Dynamics
+3. Domain 3: Instructional Process (Opening, Higher-Order Thinking, Questioning, CALP/Language, All-Student Participation, Scaffolding, Closure)
+4. Domain 4: Assessment & Monitoring Understanding
+
+Provide a comprehensive, highly constructive pedagogical breakdown in JSON format matching the schema provided:
+- summary: A 2-3 paragraph professional pedagogical summary of the lesson.
+- talkRatio: estimated teacher talk % vs student talk % (e.g. teacher: 65, student: 35).
+- higherOrderRatio: estimated % of questions/activities activating Bloom's Higher-Order Thinking (Analysis, Evaluation, Creation).
+- timeline: array of key lesson phases (e.g. "00:00 - 05:30: Opening & Apperception", with summary and observation notes).
+- domainScores: suggested 1-4 rating with specific evidence notes for major indicators (D1.2, D2.2, D2.4, D3.3, D3.5, D3.10, D3.11, D3.18, D3.19, D4.2).
+- glow: specific praise and strengths grounded in observed evidence.
+- grow: targeted reflective growth questions for the post-conference.
+- go: concrete, time-bound next steps and actionable commitments for the teacher.
+- languageProficiency: analysis of CALP (Cognitive Academic Language Proficiency) and BICS usage.
+`;
+
+    parts.push({ text: promptText });
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.7-flash",
+      contents: { parts },
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            summary: { type: Type.STRING, description: "Professional pedagogical evaluation summary" },
+            teacherTalkPercentage: { type: Type.NUMBER, description: "Estimated Teacher Talk Time percentage 0-100" },
+            studentTalkPercentage: { type: Type.NUMBER, description: "Estimated Student Talk Time percentage 0-100" },
+            higherOrderThinkingPercentage: { type: Type.NUMBER, description: "Higher-order questioning/activity percentage 0-100" },
+            calpProficiencyNotes: { type: Type.STRING, description: "Analysis of Academic Language (CALP) & BICS clarity" },
+            timeline: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  phase: { type: Type.STRING },
+                  timestamp: { type: Type.STRING },
+                  description: { type: Type.STRING },
+                  strengths: { type: Type.STRING },
+                },
+                required: ["phase", "description"],
+              },
+            },
+            suggestedScores: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  indicatorCode: { type: Type.STRING, description: "e.g. D1.2, D2.2, D3.5, D3.10, D3.18, D3.19" },
+                  score: { type: Type.INTEGER, description: "1 to 4" },
+                  evidence: { type: Type.STRING, description: "Observable evidence supporting this rating" },
+                },
+                required: ["indicatorCode", "score", "evidence"],
+              },
+            },
+            glow: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: "Observed strengths and pedagogical highlights",
+            },
+            grow: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: "Targeted reflective questions for professional development",
+            },
+            go: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: "Concrete time-bound action steps for the teacher",
+            },
+          },
+          required: [
+            "summary",
+            "teacherTalkPercentage",
+            "studentTalkPercentage",
+            "higherOrderThinkingPercentage",
+            "glow",
+            "grow",
+            "go",
+            "suggestedScores",
+          ],
+        },
+      },
+    });
+
+    const text = response.text;
+    if (!text) {
+      throw new Error("No response received from AI model.");
+    }
+
+    const data = JSON.parse(text);
+    return res.json({ success: true, data });
+  } catch (error: any) {
+    console.error("AI Analysis Error:", error);
+    return res.status(500).json({
+      error: error.message || "Failed to analyze lesson with Gemini AI.",
+    });
+  }
+});
+
+// API: Generate Custom Glow / Grow / Go & Action Recommendations
+app.post("/api/ai-feedback", requireAuth, async (req, res) => {
+  try {
+    const ai = getGeminiClient();
+    if (!ai) {
+      return res.status(500).json({ error: "Gemini API key is missing." });
+    }
+
+    const { teacherName, subject, careerLevel, scoredItems, observerNotes } = req.body;
+
+    const prompt = `
+You are a senior Eduversal pedagogical appraiser.
+Generate professional, structured post-observation feedback (Glow / Grow / Go protocol) for:
+- Teacher: ${teacherName}
+- Subject: ${subject}
+- Level: ${careerLevel}
+- Observer's Quick Notes: ${observerNotes || "None"}
+- Assessment Items and Scores:
+${JSON.stringify(scoredItems || [], null, 2)}
+
+Provide high-impact, empathetic, research-informed feedback aligned with Danielson FfT and Marzano instructional strategies:
+1. Glow (3-4 specific praises with rubric evidence)
+2. Grow (3 reflective coaching questions designed to prompt deep professional reflection)
+3. Go (3 concrete, measurable commitments/next steps)
+4. Synthesis Paragraph for the official appraisal record.
+`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.7-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            glow: { type: Type.ARRAY, items: { type: Type.STRING } },
+            grow: { type: Type.ARRAY, items: { type: Type.STRING } },
+            go: { type: Type.ARRAY, items: { type: Type.STRING } },
+            synthesis: { type: Type.STRING },
+          },
+          required: ["glow", "grow", "go", "synthesis"],
+        },
+      },
+    });
+
+    const parsed = JSON.parse(response.text || "{}");
+    return res.json({ success: true, data: parsed });
+  } catch (error: any) {
+    console.error("AI Feedback Error:", error);
+    return res.status(500).json({ error: error.message || "Failed to generate AI feedback." });
+  }
+});
+
+// API: Auto-Grade Teacher Lesson Observation based on Lesson Activities, Notes & Transcripts
+app.post("/api/auto-grade", requireAuth, async (req, res) => {
+  try {
+    const ai = getGeminiClient();
+    if (!ai) {
+      return res.status(500).json({ error: "Gemini API key is missing." });
+    }
+
+    const {
+      teacherName,
+      subject,
+      careerLevel,
+      schoolLevel,
+      gradeClass,
+      lessonTopic,
+      learningObjectives,
+      observerNotes,
+      transcript,
+      activities = [],
+      indicators = [],
+    } = req.body;
+
+    const prompt = `
+You are the master Eduversal Chief Academic Officer and Lead Teacher Appraiser.
+Your task is to conduct an rigorous, fair, and evidence-grounded AUTO-GRADING of a subject teacher's classroom observation under Eduversal Teacher Appraisal Framework 2.0.
+
+Observation Context:
+- Teacher: ${teacherName}
+- Subject: ${subject}
+- School Level: ${schoolLevel}
+- Grade/Class: ${gradeClass}
+- Career Stage: ${careerLevel}
+- Lesson Topic: ${lessonTopic}
+- Stated Learning Objectives: ${learningObjectives}
+- General Observer Notes: ${observerNotes || "None"}
+- Audio Transcript / Dialogue: ${transcript ? `"${transcript}"` : "Not available"}
+
+Structured Lesson Activities Timeline (${activities.length} phases recorded):
+${JSON.stringify(activities, null, 2)}
+
+Rubric Indicators to Evaluate:
+${JSON.stringify(
+  indicators.map((ind: any) => ({
+    id: ind.id,
+    domain: ind.domainId,
+    title: ind.title,
+    focus: ind.coachingFocus,
+  })),
+  null,
+  2
+)}
+
+Scoring Guidelines for 4-Point Rubric:
+- 4 (Distinguished): Exemplary, seamless student autonomy, deep Bloom's HOTS synthesis, 100% engagement, rigorous CALP discourse.
+- 3 (Proficient): Solid, consistent mastery, clear objectives, guided practice, active student participation, effective feedback.
+- 2 (Basic): Inconsistent implementation, teacher-dominated talk, basic tasks, surface understanding, minor timing gaps.
+- 1 (Unsatisfactory): Lacks objective alignment, disengaged students, poor classroom management, misconceptions unaddressed.
+
+Analyze all available activities, teacher actions, questions asked, and student evidence to score EVERY listed indicator (1, 2, 3, or 4) with a specific pedagogical rationale. Also generate structured Glow / Grow / Go feedback items and a summary evaluation.
+`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-3.7-flash",
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            summaryEvaluation: {
+              type: Type.STRING,
+              description: "Comprehensive 2-paragraph pedagogical evaluation narrative",
+            },
+            scores: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  indicatorCode: { type: Type.STRING },
+                  score: { type: Type.INTEGER, description: "1 to 4 rating" },
+                  rationale: { type: Type.STRING, description: "Specific evidence-based justification" },
+                },
+                required: ["indicatorCode", "score", "rationale"],
+              },
+            },
+            glow: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: "3-4 observed strengths grounded in evidence",
+            },
+            grow: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: "3 reflective developmental questions for coaching",
+            },
+            go: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: "3 actionable time-bound commitments for next steps",
+            },
+          },
+          required: ["summaryEvaluation", "scores", "glow", "grow", "go"],
+        },
+      },
+    });
+
+    const parsed = JSON.parse(response.text || "{}");
+    return res.json({ success: true, data: parsed });
+  } catch (error: any) {
+    console.error("Auto-Grade API Error:", error);
+    return res.status(500).json({ error: error.message || "Failed to auto-grade lesson with Gemini AI." });
+  }
+});
+
+export default app;
