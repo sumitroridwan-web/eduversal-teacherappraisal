@@ -14,6 +14,7 @@ import {
   getRecord,
   putRecord,
   deleteRecord,
+  describeConfiguration,
 } from "./firestore.js";
 // Type-only: erased at compile time, so the SDK is not pulled in at module load.
 import type { GoogleGenAI } from "@google/genai";
@@ -260,6 +261,12 @@ function resolveCollection(req: Request, res: Response): string | null {
 
 app.get("/api/sync/status", (req, res) => {
   res.json({ configured: isFirestoreConfigured() });
+});
+
+// Masked configuration check, so a broken setup can be diagnosed without
+// reading the secrets back out. Behind the platform password.
+app.get("/api/sync/diagnostics", requireAuth, (req, res) => {
+  res.json(describeConfiguration());
 });
 
 app.get("/api/sync/:collection", requireAuth, async (req, res) => {

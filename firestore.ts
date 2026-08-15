@@ -34,16 +34,28 @@ export interface StoredRecord {
  * "DECODER routines::unsupported", which says nothing about the real cause, so
  * the value is normalised here instead.
  */
-export function normalizePrivateKey(raw: string): string {
-  let key = raw.trim();
-
-  // Whole value wrapped in quotes, copied straight out of the JSON file.
+/**
+ * Strips wrapping quotes and whitespace.
+ *
+ * A .env file has its quotes removed by dotenv, but a hosting dashboard stores
+ * the value exactly as pasted - so a value copied in its quoted form arrives
+ * with the quotes as part of the string. On the client email that produces
+ * "account not found", which points nowhere near the real cause.
+ */
+export function normalizeEnvValue(raw: string): string {
+  let value = raw.trim();
   if (
-    (key.startsWith('"') && key.endsWith('"')) ||
-    (key.startsWith("'") && key.endsWith("'"))
+    value.length > 1 &&
+    ((value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'")))
   ) {
-    key = key.slice(1, -1).trim();
+    value = value.slice(1, -1).trim();
   }
+  return value;
+}
+
+export function normalizePrivateKey(raw: string): string {
+  let key = normalizeEnvValue(raw);
 
   // Base64 of the entire PEM, which is how some people dodge newline problems.
   if (!key.includes("BEGIN")) {
@@ -65,7 +77,30 @@ function serviceAccount() {
   const rawKey = process.env.FIREBASE_PRIVATE_KEY;
 
   if (!projectId || !clientEmail || !rawKey) return null;
-  return { projectId, clientEmail, privateKey: normalizePrivateKey(rawKey) };
+  return {
+    projectId: normalizeEnvValue(projectId),
+    clientEmail: normalizeEnvValue(clientEmail),
+    privateKey: normalizePrivateKey(rawKey),
+  };
+}
+
+/** Non-secret view of the configuration, for diagnosing a failing setup. */
+export function describeConfiguration() {
+  const account = serviceAccount();
+  if (!account) return { configured: false as const };
+
+  const key = account.privateKey;
+  return {
+    configured: true as const,
+    projectId: account.projectId,
+    // Masked: enough to spot a wrong or malformed value, not enough to leak it.
+    clientEmailSuffix: account.clientEmail.slice(account.clientEmail.indexOf('@')),
+    clientEmailLooksValid: /^[^@\s"']+@[^@\s"']+\.iam\.gserviceaccount\.com$/.test(
+      account.clientEmail
+    ),
+    privateKeyLooksValid:
+      key.includes('BEGIN') && key.includes('END') && key.includes('\n'),
+  };
 }
 
 export function isFirestoreConfigured(): boolean {
