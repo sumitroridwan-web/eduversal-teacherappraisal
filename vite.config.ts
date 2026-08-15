@@ -3,8 +3,17 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
 
+// Identifies which deployment is actually being served, so a stale Vercel
+// deployment URL can be told apart from the current one at a glance.
+const BUILD_ID = (
+  process.env.VERCEL_GIT_COMMIT_SHA || 'local'
+).slice(0, 7);
+
 export default defineConfig(() => {
   return {
+    define: {
+      __BUILD_ID__: JSON.stringify(BUILD_ID),
+    },
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

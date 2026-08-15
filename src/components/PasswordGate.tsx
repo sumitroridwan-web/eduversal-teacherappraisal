@@ -2,11 +2,40 @@ import React, { useEffect, useState } from 'react';
 import { Lock, RefreshCw, AlertTriangle } from 'lucide-react';
 import { EduversalLogo } from './EduversalLogo';
 
+declare const __BUILD_ID__: string;
+
 interface PasswordGateProps {
   children: React.ReactNode;
 }
 
-type GateStatus = 'CHECKING' | 'LOCKED' | 'UNLOCKED' | 'UNAVAILABLE';
+type GateStatus =
+  | 'CHECKING'
+  | 'LOCKED'
+  | 'UNLOCKED'
+  | 'UNAVAILABLE' // server reachable, but no APP_PASSWORD configured
+  | 'API_DOWN'; // /api/* is not answering with JSON at all
+
+/**
+ * Reads a JSON body, or returns null when the response is not actually JSON.
+ *
+ * A static host with no backend answers /api/* with an HTML 404 or the SPA
+ * shell, which parses as "not JSON" rather than throwing anything useful -
+ * so this distinguishes "the API is missing" from "the API said no".
+ */
+async function readJson(res: Response): Promise<any | null> {
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) return null;
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+function describeNonJson(path: string, res: Response): string {
+  const contentType = res.headers.get('content-type') || 'no content-type';
+  return `${path} returned HTTP ${res.status} as ${contentType}, not JSON. The API is not deployed at this URL.`;
+}
 
 /**
  * Gates the platform behind the shared access password.
@@ -19,23 +48,37 @@ export const PasswordGate: React.FC<PasswordGateProps> = ({ children }) => {
   const [status, setStatus] = useState<GateStatus>('CHECKING');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [diagnostic, setDiagnostic] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   // Resume an existing session if the cookie is still valid.
   useEffect(() => {
     let cancelled = false;
 
-    fetch('/api/auth/session')
-      .then((res) => res.json())
-      .then((data) => {
+    (async () => {
+      try {
+        const res = await fetch('/api/auth/session');
+        const data = await readJson(res);
         if (cancelled) return;
+
+        if (!data) {
+          setDiagnostic(describeNonJson('GET /api/auth/session', res));
+          setStatus('API_DOWN');
+          return;
+        }
         if (data.authenticated) setStatus('UNLOCKED');
         else if (!data.configured) setStatus('UNAVAILABLE');
         else setStatus('LOCKED');
-      })
-      .catch(() => {
-        if (!cancelled) setStatus('LOCKED');
-      });
+      } catch (err) {
+        if (cancelled) return;
+        setDiagnostic(
+          `Could not reach /api/auth/session: ${
+            err instanceof Error ? err.message : 'network error'
+          }`
+        );
+        setStatus('API_DOWN');
+      }
+    })();
 
     return () => {
       cancelled = true;
@@ -48,6 +91,7 @@ export const PasswordGate: React.FC<PasswordGateProps> = ({ children }) => {
 
     setSubmitting(true);
     setError(null);
+    setDiagnostic(null);
 
     try {
       const res = await fetch('/api/auth/login', {
@@ -55,17 +99,27 @@ export const PasswordGate: React.FC<PasswordGateProps> = ({ children }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password }),
       });
-      const data = await res.json().catch(() => ({}));
+      const data = await readJson(res);
+
+      if (!data) {
+        setDiagnostic(describeNonJson('POST /api/auth/login', res));
+        setStatus('API_DOWN');
+        return;
+      }
 
       if (res.ok && data.success) {
         setPassword('');
         setStatus('UNLOCKED');
       } else {
-        setError(data.error || 'Unable to sign in. Please try again.');
+        setError(data.error || `Sign-in failed (HTTP ${res.status}).`);
         setPassword('');
       }
-    } catch {
-      setError('Could not reach the server. Check your connection and try again.');
+    } catch (err) {
+      setError(
+        `Could not reach the server: ${
+          err instanceof Error ? err.message : 'network error'
+        }`
+      );
     } finally {
       setSubmitting(false);
     }
@@ -105,12 +159,35 @@ export const PasswordGate: React.FC<PasswordGateProps> = ({ children }) => {
             </div>
             <h2 className="text-sm font-bold text-slate-900">Access Not Configured</h2>
             <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
-              No platform password has been set on the server. Add{' '}
+              The server is running, but no platform password has been set. Add{' '}
               <code className="px-1 py-0.5 rounded bg-slate-100 text-slate-700 font-mono text-[11px]">
                 APP_PASSWORD
               </code>{' '}
-              to the environment and restart.
+              to the environment variables and redeploy.
             </p>
+          </div>
+        ) : status === 'API_DOWN' ? (
+          <div className="bg-white border border-red-200 rounded-2xl p-6 shadow-sm text-center">
+            <div className="w-11 h-11 rounded-2xl bg-red-50 border border-red-100 flex items-center justify-center text-red-600 mx-auto mb-3">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <h2 className="text-sm font-bold text-slate-900">Backend Not Reachable</h2>
+            <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
+              The sign-in service did not respond. The frontend is deployed but the
+              API is not running at this address, so no password can be accepted.
+            </p>
+            {diagnostic && (
+              <p className="mt-3 px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 text-[11px] font-mono text-slate-600 text-left break-words">
+                {diagnostic}
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="mt-4 w-full px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-xl transition cursor-pointer"
+            >
+              Retry
+            </button>
           </div>
         ) : (
           <form
@@ -164,6 +241,9 @@ export const PasswordGate: React.FC<PasswordGateProps> = ({ children }) => {
 
         <p className="text-center text-[11px] text-slate-400 mt-5">
           Authorised Eduversal appraisers and school leadership only.
+        </p>
+        <p className="text-center text-[10px] text-slate-300 mt-1 font-mono">
+          build {__BUILD_ID__}
         </p>
       </div>
     </div>
