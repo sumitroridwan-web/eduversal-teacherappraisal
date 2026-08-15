@@ -139,10 +139,31 @@ export interface LessonPhoto {
   linkedActivityId?: string;
 }
 
+export const EVIDENCE_SOURCES = [
+  'Lesson Plan Review',
+  'Live Classroom Observation',
+  'Post-Lesson Discussion',
+  'Edunav Record Review',
+] as const;
+
+export type EvidenceSource = typeof EVIDENCE_SOURCES[number];
+
+/**
+ * Where a rating came from.
+ *
+ * An appraisal that affects progression has to be able to show whose judgement
+ * it records, so an AI suggestion stays marked as such until an appraiser
+ * confirms it.
+ */
+export type ScoreOrigin = 'observer' | 'ai-suggested' | 'ai-confirmed';
+
 export interface ItemScoreRecord {
   score: 1 | 2 | 3 | 4 | null;
   notes: string;
-  evidenceSource?: 'Lesson Plan Review' | 'Live Classroom Observation' | 'Post-Lesson Discussion' | 'Edunav Record Review';
+  evidenceSource?: EvidenceSource;
+  origin?: ScoreOrigin;
+  /** Set when an appraiser confirms or overrides an AI suggestion. */
+  confirmedAt?: string;
 }
 
 export interface GlowGrowGo {
@@ -237,6 +258,17 @@ export interface TeacherAppraisalRecord {
   feedback: GlowGrowGo;
   generalObserverNotes: string;
   postConferenceDiscussionSummary?: string;
+
+  /**
+   * The teacher's response to the appraisal. Recorded because an appraisal
+   * used in progression decisions should show that the teacher saw it and had
+   * the opportunity to respond.
+   */
+  teacherAcknowledgement?: {
+    status: 'Pending' | 'Acknowledged' | 'Acknowledged with comment' | 'Disagrees';
+    date?: string;
+    comment?: string;
+  };
   
   // Audio & AI Data
   hasAudioRecording?: boolean;
@@ -367,6 +399,7 @@ export interface WalkthroughRecord {
   id: string;
   teacherName: string;
   subject: string;
+  subjectCategory: SubjectCategory;
   classObserved: string;
   dateOfVisit: string;
   timeOfVisit: string;

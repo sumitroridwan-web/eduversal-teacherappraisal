@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Save,
   CheckCircle2,
@@ -33,6 +33,9 @@ import {
   LessonActivity,
   EDUVERSAL_SCHOOLS,
   ACADEMIC_YEARS,
+  EVIDENCE_SOURCES,
+  EvidenceSource,
+  ItemScoreRecord,
   currentAcademicYear,
 } from '../types';
 import {
@@ -48,6 +51,7 @@ import { LessonActivitiesManager } from './LessonActivitiesManager';
 import { ClassroomPhotoEvidence } from './ClassroomPhotoEvidence';
 import { AutoGradeModal } from './AutoGradeModal';
 import { executeAutoGrade } from '../services/autoGrader';
+import { saveOrUpdateAppraisal } from '../services/storage';
 
 interface AppraisalFormProps {
   initialRecord: TeacherAppraisalRecord;
@@ -83,6 +87,30 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
     setRecord(initialRecord);
   }, [initialRecord]);
 
+  // Autosave. Writes directly to storage rather than through onSave: routing
+  // it through the parent would replace initialRecord and reset this form
+  // mid-edit. An observation can run 40 minutes, so losing it to a closed tab
+  // is not acceptable.
+  const [autoSaveState, setAutoSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const skipFirstAutoSave = useRef(true);
+
+  useEffect(() => {
+    if (skipFirstAutoSave.current) {
+      skipFirstAutoSave.current = false;
+      return;
+    }
+    setAutoSaveState('saving');
+    const timer = setTimeout(() => {
+      try {
+        saveOrUpdateAppraisal(record);
+        setAutoSaveState('saved');
+      } catch {
+        setAutoSaveState('error');
+      }
+    }, 1200);
+    return () => clearTimeout(timer);
+  }, [record]);
+
   // Recalculate stats whenever careerLevel or scores change
   const currentItems = getItemsForLevel(record.careerLevel);
   const config = LEVEL_SCORING_CONFIGS[record.careerLevel];
@@ -107,8 +135,41 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
     scores: Record<string, { score: 1 | 2 | 3 | 4 | null; notes: string }>,
     feedback?: { glow: string[]; grow: string[]; go: string[] }
   ) => {
+    // Never replace an appraiser's own rating without asking. Overwriting
+    // professional judgement silently is the one thing this must not do.
+    const clashes = Object.entries(scores).filter(([code, incoming]) => {
+      const existing = record.scores[code];
+      return (
+        existing &&
+        typeof existing.score === 'number' &&
+        existing.origin !== 'ai-suggested' &&
+        existing.score !== incoming.score
+      );
+    });
+
+    if (clashes.length > 0) {
+      const proceed = window.confirm(
+        `${clashes.length} indicator${clashes.length === 1 ? '' : 's'} you rated yourself ` +
+          `would be changed by the AI suggestions ` +
+          `(${clashes.slice(0, 5).map(([c]) => c).join(', ')}${clashes.length > 5 ? '…' : ''}).\n\n` +
+          'Replace your ratings with the AI suggestions?'
+      );
+      if (!proceed) return;
+    }
+
     setRecord((prev) => {
-      const updatedScores = { ...prev.scores, ...scores };
+      const updatedScores = { ...prev.scores };
+      Object.entries(scores).forEach(([code, incoming]) => {
+        updatedScores[code] = {
+          ...prev.scores[code],
+          score: incoming.score,
+          notes: incoming.notes,
+          // Applied, but not yet anyone's professional judgement.
+          origin: 'ai-suggested',
+          confirmedAt: undefined,
+        };
+      });
+
       return {
         ...prev,
         scores: updatedScores,
@@ -164,11 +225,59 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
           [itemId]: {
             ...existing,
             score: existing.score === score ? null : score, // toggle if clicked again
+            // Rating it by hand makes it the appraiser's own judgement.
+            origin: 'observer',
+            confirmedAt: new Date().toISOString(),
           },
         },
       };
     });
   };
+
+  const handleUpdateEvidenceSource = (itemId: string, evidenceSource: EvidenceSource) => {
+    setRecord((prev) => ({
+      ...prev,
+      scores: {
+        ...prev.scores,
+        [itemId]: { ...(prev.scores[itemId] || { score: null, notes: '' }), evidenceSource },
+      },
+    }));
+  };
+
+  // Accept an AI suggestion as the appraiser's own judgement
+  const handleConfirmSuggestion = (itemId: string) => {
+    setRecord((prev) => ({
+      ...prev,
+      scores: {
+        ...prev.scores,
+        [itemId]: {
+          ...prev.scores[itemId],
+          origin: 'ai-confirmed',
+          confirmedAt: new Date().toISOString(),
+        },
+      },
+    }));
+  };
+
+  const handleConfirmAllSuggestions = () => {
+    setRecord((prev) => {
+      const updated = { ...prev.scores };
+      Object.entries(updated).forEach(([code, entry]: [string, ItemScoreRecord]) => {
+        if (entry?.origin === 'ai-suggested') {
+          updated[code] = {
+            ...entry,
+            origin: 'ai-confirmed',
+            confirmedAt: new Date().toISOString(),
+          };
+        }
+      });
+      return { ...prev, scores: updated };
+    });
+  };
+
+  const pendingSuggestions = (Object.values(record.scores) as ItemScoreRecord[]).filter(
+    (e) => e?.origin === 'ai-suggested' && typeof e.score === 'number'
+  ).length;
 
   // Update note for an item
   const handleUpdateNotes = (itemId: string, notes: string) => {
@@ -248,6 +357,27 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
 
   // Save Handler
   const handleSaveClick = (status: 'Draft' | 'Observation Saved' | 'Finalized (Conference Complete)') => {
+    if (status === 'Finalized (Conference Complete)') {
+      // A finalised appraisal carries weight, so it should not close with the
+      // AI's opinion standing in for the appraiser's.
+      if (pendingSuggestions > 0) {
+        window.alert(
+          `${pendingSuggestions} AI-suggested rating${pendingSuggestions === 1 ? '' : 's'} ` +
+            'have not been confirmed.\n\nConfirm or change them before finalising, so the ' +
+            'record shows your professional judgement rather than an unreviewed suggestion.'
+        );
+        return;
+      }
+      if (!stats.isComplete) {
+        const proceed = window.confirm(
+          `Only ${stats.itemsScored} of ${stats.totalItems} indicators have been rated.\n\n` +
+            'Unrated indicators are reported as not evidenced and are excluded from the ' +
+            'score, not counted against the teacher.\n\nFinalise anyway?'
+        );
+        if (!proceed) return;
+      }
+    }
+
     const updatedRecord: TeacherAppraisalRecord = {
       ...record,
       status,
@@ -842,6 +972,26 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
                           {item.theoryBasis}
                         </span>
                       )}
+
+                      {currentScoreRecord.origin === 'ai-suggested' &&
+                        typeof currentScoreRecord.score === 'number' && (
+                          <button
+                            type="button"
+                            onClick={() => handleConfirmSuggestion(item.id)}
+                            title="This rating came from the AI. Confirm it as your professional judgement."
+                            className="text-[10px] font-bold px-2 py-0.5 rounded border bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100 transition cursor-pointer"
+                          >
+                            AI SUGGESTED — CONFIRM
+                          </button>
+                        )}
+                      {currentScoreRecord.origin === 'ai-confirmed' && (
+                        <span
+                          title="AI suggestion, confirmed by the appraiser"
+                          className="text-[10px] font-bold px-2 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200"
+                        >
+                          AI · CONFIRMED
+                        </span>
+                      )}
                     </div>
 
                     <h3 className="text-sm font-bold text-slate-900">{item.title}</h3>
@@ -987,6 +1137,25 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
                       placeholder={`Observable evidence and appraiser notes for ${item.id}...`}
                       className="w-full bg-white text-slate-900 text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs"
                     />
+
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <label
+                        htmlFor={`evidence-src-${item.id}`}
+                        className="text-[10px] text-slate-500 font-medium shrink-0"
+                      >
+                        Evidence source
+                      </label>
+                      <select
+                        id={`evidence-src-${item.id}`}
+                        value={currentScoreRecord.evidenceSource || 'Live Classroom Observation'}
+                        onChange={(e) => handleUpdateEvidenceSource(item.id, e.target.value as EvidenceSource)}
+                        className="text-[10px] px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 outline-none cursor-pointer focus:border-indigo-400"
+                      >
+                        {EVIDENCE_SOURCES.map((src) => (
+                          <option key={src} value={src}>{src}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
 
                   {/* Quick Evidence Tags */}
@@ -1229,17 +1398,116 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
                 className="w-full bg-white text-slate-900 text-xs p-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y shadow-2xs"
               />
             </div>
+
+            {/* Teacher acknowledgement and right of reply. An appraisal that
+                feeds progression decisions should record that the teacher saw
+                it and had the chance to respond. */}
+            <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50">
+              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
+                Teacher Acknowledgement &amp; Right of Reply
+              </label>
+              <p className="text-[11px] text-slate-500 mb-2.5">
+                Records that the teacher has seen this appraisal and may respond. A disagreement
+                is recorded, not overwritten.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label
+                    htmlFor="ack-status"
+                    className="block text-[11px] font-medium text-slate-600 mb-1"
+                  >
+                    Status
+                  </label>
+                  <select
+                    id="ack-status"
+                    value={record.teacherAcknowledgement?.status || 'Pending'}
+                    onChange={(e) =>
+                      setRecord({
+                        ...record,
+                        teacherAcknowledgement: {
+                          ...(record.teacherAcknowledgement || {}),
+                          status: e.target.value as NonNullable<
+                            TeacherAppraisalRecord['teacherAcknowledgement']
+                          >['status'],
+                          date:
+                            e.target.value === 'Pending'
+                              ? undefined
+                              : record.teacherAcknowledgement?.date ||
+                                new Date().toISOString().substring(0, 10),
+                        },
+                      })
+                    }
+                    className="w-full bg-white text-slate-900 text-xs p-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    <option value="Pending">Pending — not yet shared with the teacher</option>
+                    <option value="Acknowledged">Acknowledged</option>
+                    <option value="Acknowledged with comment">Acknowledged with comment</option>
+                    <option value="Disagrees">Disagrees</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="ack-date"
+                    className="block text-[11px] font-medium text-slate-600 mb-1"
+                  >
+                    Date acknowledged
+                  </label>
+                  <input
+                    id="ack-date"
+                    type="date"
+                    value={record.teacherAcknowledgement?.date || ''}
+                    onChange={(e) =>
+                      setRecord({
+                        ...record,
+                        teacherAcknowledgement: {
+                          status: record.teacherAcknowledgement?.status || 'Acknowledged',
+                          ...record.teacherAcknowledgement,
+                          date: e.target.value,
+                        },
+                      })
+                    }
+                    className="w-full bg-white text-slate-900 text-xs p-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <label
+                htmlFor="ack-comment"
+                className="block text-[11px] font-medium text-slate-600 mt-3 mb-1"
+              >
+                Teacher&apos;s comment (optional)
+              </label>
+              <textarea
+                id="ack-comment"
+                value={record.teacherAcknowledgement?.comment || ''}
+                onChange={(e) =>
+                  setRecord({
+                    ...record,
+                    teacherAcknowledgement: {
+                      status: record.teacherAcknowledgement?.status || 'Acknowledged with comment',
+                      ...record.teacherAcknowledgement,
+                      comment: e.target.value,
+                    },
+                  })
+                }
+                placeholder="The teacher's own words — agreement, clarification, or a point of disagreement."
+                rows={3}
+                className="w-full bg-white text-slate-900 text-xs p-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y shadow-2xs"
+              />
+            </div>
           </div>
         </div>
       )}
 
       {/* Floating Bottom Action Bar */}
       <div className="sticky bottom-4 z-40 bg-white/95 backdrop-blur-md border border-slate-200 rounded-2xl p-4 shadow-xl flex flex-wrap items-center justify-between gap-4 text-slate-800">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <div className="text-xs">
-            <span className="text-slate-500">Total F2 Score: </span>
+            <span className="text-slate-500">F2 Attainment: </span>
             <strong className="text-indigo-600 font-mono text-sm">
-              {stats.totalRaw}/{stats.maxTotal} ({stats.percentage}%)
+              {stats.totalRaw}/{stats.maxRated} ({stats.percentage}%)
             </strong>
           </div>
           <span className="text-slate-300">|</span>
@@ -1247,6 +1515,50 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
             <span className="text-slate-500">Indicative Reading: </span>
             <strong className="text-emerald-600 font-bold">Grade {stats.grade}</strong>
           </div>
+          <span className="text-slate-300">|</span>
+
+          {/* Completeness is stated, never hidden: attainment is measured only
+              across rated indicators, so the reader must see how many that is. */}
+          <div className="text-xs">
+            <span className="text-slate-500">Rated: </span>
+            <strong
+              className={`font-mono ${
+                stats.isComplete ? 'text-emerald-600' : 'text-amber-600'
+              }`}
+            >
+              {stats.itemsScored}/{stats.totalItems}
+            </strong>
+            {!stats.isComplete && (
+              <span className="text-[10px] text-slate-400 ml-1">
+                ({stats.totalItems - stats.itemsScored} not evidenced)
+              </span>
+            )}
+          </div>
+
+          {pendingSuggestions > 0 && (
+            <>
+              <span className="text-slate-300">|</span>
+              <button
+                type="button"
+                onClick={handleConfirmAllSuggestions}
+                className="text-xs font-bold px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 transition cursor-pointer"
+                title="Accept every AI suggestion as your professional judgement"
+              >
+                {pendingSuggestions} AI rating{pendingSuggestions === 1 ? '' : 's'} to confirm
+              </button>
+            </>
+          )}
+
+          <span className="text-slate-300">|</span>
+          <span className="text-[10px] text-slate-400">
+            {autoSaveState === 'saving'
+              ? 'Saving…'
+              : autoSaveState === 'saved'
+              ? 'Draft autosaved'
+              : autoSaveState === 'error'
+              ? 'Autosave failed — use Save'
+              : ''}
+          </span>
         </div>
 
         <div className="flex items-center gap-3">

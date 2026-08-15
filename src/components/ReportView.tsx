@@ -41,6 +41,20 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
 
   // Only captioned photos carry meaning in a report, so uncaptioned ones are
   // left out rather than printed as unexplained images.
+  // How much of this appraisal is the appraiser's own judgement?
+  const aiRatingCounts = (Object.values(record.scores) as Array<{ score: any; origin?: string }>)
+    .filter((e) => typeof e?.score === 'number')
+    .reduce(
+      (acc, e) => {
+        acc.total++;
+        if (e.origin === 'ai-suggested') acc.unconfirmed++;
+        else if (e.origin === 'ai-confirmed') acc.confirmed++;
+        else acc.observer++;
+        return acc;
+      },
+      { total: 0, observer: 0, confirmed: 0, unconfirmed: 0 }
+    );
+
   const captionedPhotos = (record.photos || []).filter((p) => p.caption.trim());
   const bestPractices = captionedPhotos.filter((p) => p.isBestPractice);
 
@@ -312,12 +326,40 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
               <div className="font-bold font-mono text-slate-800 text-sm mt-0.5">{stats.grade}</div>
             </div>
             <div className="p-2 bg-white rounded-lg border border-slate-200">
-              <div className="text-[10px] text-slate-500">Indicators Scored</div>
-              <div className="font-bold font-mono text-slate-800 text-sm mt-0.5">
+              <div className="text-[10px] text-slate-500">Indicators Rated</div>
+              <div
+                className={`font-bold font-mono text-sm mt-0.5 ${
+                  stats.isComplete ? 'text-slate-800' : 'text-amber-700'
+                }`}
+              >
                 {stats.itemsScored} / {stats.totalItems}
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Scope of judgement: what this result does and does not cover */}
+        <div className="mb-6 text-[11px] text-slate-600 leading-relaxed">
+          {!stats.isComplete && (
+            <p className="mb-1">
+              <strong>Scope:</strong> {stats.itemsScored} of {stats.totalItems} indicators were
+              evidenced during this observation. Attainment is calculated across those rated
+              indicators only; the remaining {stats.totalItems - stats.itemsScored} are reported
+              as not evidenced and are not counted against the teacher.
+            </p>
+          )}
+          {aiRatingCounts.total > 0 && (
+            <p>
+              <strong>Rating provenance:</strong> {aiRatingCounts.observer} rated directly by the
+              appraiser, {aiRatingCounts.confirmed} AI-suggested and confirmed by the appraiser
+              {aiRatingCounts.unconfirmed > 0 && (
+                <span className="text-amber-700 font-semibold">
+                  , {aiRatingCounts.unconfirmed} AI-suggested and not yet confirmed
+                </span>
+              )}
+              .
+            </p>
+          )}
         </div>
 
         {/* Classroom Conditions Read Against Management Theory */}
@@ -414,6 +456,36 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* Teacher Acknowledgement */}
+        {record.teacherAcknowledgement && record.teacherAcknowledgement.status !== 'Pending' && (
+          <div className="mb-8">
+            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3 pb-1 border-b border-slate-200">
+              Teacher Acknowledgement &amp; Response
+            </h3>
+            <div className="p-3 rounded-xl border border-slate-200 bg-slate-50 text-xs">
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={`font-bold px-2 py-0.5 rounded border text-[11px] ${
+                    record.teacherAcknowledgement.status === 'Disagrees'
+                      ? 'bg-amber-50 text-amber-800 border-amber-300'
+                      : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  }`}
+                >
+                  {record.teacherAcknowledgement.status}
+                </span>
+                {record.teacherAcknowledgement.date && (
+                  <span className="text-slate-500">on {record.teacherAcknowledgement.date}</span>
+                )}
+              </div>
+              {record.teacherAcknowledgement.comment && (
+                <p className="text-slate-700 mt-2 italic">
+                  &ldquo;{record.teacherAcknowledgement.comment}&rdquo;
+                </p>
+              )}
             </div>
           </div>
         )}

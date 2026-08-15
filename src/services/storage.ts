@@ -1,5 +1,4 @@
 import { TeacherAppraisalRecord, CareerLevel, SchoolLevel, SubjectCategory, currentAcademicYear } from '../types';
-import { SAMPLE_APPRAISALS } from '../data/sampleAppraisals';
 import { calculateF2Scores, calculateF2Predicate, getItemsForLevel } from '../data/frameworkRubrics';
 
 const STORAGE_KEY = 'eduversal_appraisals_v4_clean';
@@ -59,7 +58,8 @@ export function saveOrUpdateAppraisal(record: TeacherAppraisalRecord): TeacherAp
   // Update stats
   const stats = calculateF2Scores(record.careerLevel, record.scores);
   record.f2RawScore = stats.totalRaw;
-  record.f2MaxScore = stats.maxTotal;
+  // Matches f2Percentage: the maximum across rated indicators, not the whole rubric.
+  record.f2MaxScore = stats.maxRated;
   record.f2Percentage = stats.percentage;
   record.indicativeGrade = stats.grade;
 
@@ -81,11 +81,6 @@ export function deleteAppraisal(id: string): void {
   const all = loadAppraisals();
   const filtered = all.filter((a) => a.id !== id);
   saveAppraisals(filtered);
-}
-
-export function resetToSamples(): TeacherAppraisalRecord[] {
-  saveAppraisals(SAMPLE_APPRAISALS);
-  return SAMPLE_APPRAISALS;
 }
 
 export function createBlankAppraisal(

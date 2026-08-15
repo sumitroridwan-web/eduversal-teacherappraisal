@@ -1319,14 +1319,26 @@ export function calculateF2Scores(
   });
 
   const totalRaw = rawA + rawB + rawC;
-  const percentage = (totalRaw / config.maxTotal) * 100;
 
+  // Attainment is measured across the indicators that were actually rated.
+  //
+  // Dividing by the full rubric would treat every unrated indicator as a zero,
+  // so a short visit that evidenced 20 of 44 indicators at Distinguished would
+  // be recorded as 45% - a failing result for a flawless lesson. Unrated means
+  // "not evidenced", not "done badly", and it is reported separately through
+  // itemsScored / isComplete rather than folded into the score.
+  const maxRated = itemsScored * 4;
+  const percentage = maxRated > 0 ? (totalRaw / maxRated) * 100 : 0;
+
+  // Graded from that percentage, using the same bands as calculateF2Predicate.
+  // The raw-point scales in LEVEL_SCORING_CONFIGS assume a fully completed
+  // sheet, so they cannot grade a partial observation fairly.
+  const rounded = Math.round(percentage * 10) / 10;
   let grade: 'A' | 'B' | 'C' | 'D' | 'F' = 'F';
-  if (totalRaw >= config.scaleA[0]) grade = 'A';
-  else if (totalRaw >= config.scaleB[0]) grade = 'B';
-  else if (totalRaw >= config.scaleC[0]) grade = 'C';
-  else if (totalRaw >= config.scaleD[0]) grade = 'D';
-  else grade = 'F';
+  if (rounded >= 86) grade = 'A';
+  else if (rounded >= 66) grade = 'B';
+  else if (rounded >= 51) grade = 'C';
+  else if (rounded >= 36) grade = 'D';
 
   return {
     rawA,
@@ -1337,6 +1349,8 @@ export function calculateF2Scores(
     maxC: config.maxSectionC,
     totalRaw,
     maxTotal: config.maxTotal,
+    /** Maximum available across rated indicators only (itemsScored * 4). */
+    maxRated,
     percentage: Math.round(percentage * 10) / 10,
     grade,
     itemsScored,

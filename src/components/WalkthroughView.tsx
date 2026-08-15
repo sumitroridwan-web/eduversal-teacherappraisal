@@ -29,6 +29,7 @@ import {
   LESSON_PHASES,
   ACADEMIC_YEARS,
   EDUVERSAL_SCHOOLS,
+  SubjectCategory,
   currentAcademicYear,
 } from '../types';
 import { EduversalLogo } from './EduversalLogo';
@@ -49,6 +50,18 @@ import {
 } from '../services/walkthroughReport';
 
 type Panel = 'form' | 'records' | 'report';
+
+const SUBJECT_CATEGORIES: SubjectCategory[] = [
+  'Mathematics',
+  'Science (Physics, Chem, Bio)',
+  'English Language & Lit',
+  'Bahasa Indonesia',
+  'Social Studies & Humanities',
+  'Information & Digital Tech',
+  'Arts & Music',
+  'Physical & Health Education',
+  'Early Childhood Education',
+];
 
 const RESPONSE_OPTIONS: Array<{ value: WalkthroughResponse; label: string; hint: string }> = [
   { value: 'E', label: 'E', hint: 'Evident — clearly observed' },
@@ -96,8 +109,10 @@ export const WalkthroughView: React.FC = () => {
     [records, draft.id]
   );
 
+  // Filter on the controlled department list rather than free-typed subject
+  // names, so "Maths" and "Mathematics" cannot split the same cohort.
   const subjects = useMemo(
-    () => Array.from(new Set(records.map((r) => r.subject).filter(Boolean))).sort(),
+    () => Array.from(new Set(records.map((r) => r.subjectCategory).filter(Boolean))).sort(),
     [records]
   );
 
@@ -260,6 +275,19 @@ export const WalkthroughView: React.FC = () => {
                 placeholder="e.g. Mathematics"
               />
             </div>
+            <div>
+              <label className="block text-slate-600 font-medium mb-1">Subject Department</label>
+              <select
+                value={draft.subjectCategory}
+                onChange={(e) => setField({ subjectCategory: e.target.value as SubjectCategory })}
+                className={`${inputClass} cursor-pointer`}
+              >
+                {SUBJECT_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+
             <div>
               <label className="block text-slate-600 font-medium mb-1">Class Observed</label>
               <input
@@ -642,13 +670,15 @@ export const WalkthroughView: React.FC = () => {
                 </select>
               </div>
               <div>
-                <label className="block text-[11px] font-semibold text-slate-600 mb-1">Subject</label>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  Subject Department
+                </label>
                 <select
                   value={filters.subject}
                   onChange={(e) => setFilters({ ...filters, subject: e.target.value })}
                   className={`${inputClass} cursor-pointer`}
                 >
-                  <option value={ALL}>All subjects</option>
+                  <option value={ALL}>All subject departments</option>
                   {subjects.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>

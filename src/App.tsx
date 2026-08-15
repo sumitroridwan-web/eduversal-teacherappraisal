@@ -4,7 +4,6 @@ import {
   saveAppraisals,
   saveOrUpdateAppraisal,
   deleteAppraisal,
-  resetToSamples,
   createBlankAppraisal,
 } from './services/storage';
 import { TeacherAppraisalRecord, CareerLevel } from './types';

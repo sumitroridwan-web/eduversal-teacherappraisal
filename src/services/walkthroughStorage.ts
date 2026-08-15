@@ -26,7 +26,17 @@ export function saveWalkthroughs(records: WalkthroughRecord[]): void {
     localStorage.setItem(WALKTHROUGH_KEY, JSON.stringify(records));
   } catch (e: any) {
     console.error('Failed to save walkthroughs', e);
-    throw new Error('The walkthrough could not be saved to this browser.');
+
+    const isQuota =
+      e?.name === 'QuotaExceededError' ||
+      e?.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+      e?.code === 22;
+
+    throw new Error(
+      isQuota
+        ? 'This browser is out of local storage, so the walkthrough was NOT saved. Export and clear older records, then save again.'
+        : 'The walkthrough could not be saved to this browser.'
+    );
   }
 }
 
@@ -41,6 +51,7 @@ export function createBlankWalkthrough(): WalkthroughRecord {
     id: `wt-${now.getTime()}-${Math.random().toString(36).slice(2, 6)}`,
     teacherName: '',
     subject: '',
+    subjectCategory: 'Mathematics',
     classObserved: '',
     dateOfVisit: now.toISOString().substring(0, 10),
     timeOfVisit: now.toTimeString().substring(0, 5),

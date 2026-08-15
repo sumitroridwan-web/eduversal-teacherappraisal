@@ -50,7 +50,7 @@ export function filterWalkthroughs(
     (w) =>
       (filters.academicYear === ALL || w.academicYear === filters.academicYear) &&
       (filters.school === ALL || w.schoolName === filters.school) &&
-      (filters.subject === ALL || w.subject === filters.subject) &&
+      (filters.subject === ALL || w.subjectCategory === filters.subject) &&
       (filters.observerRole === ALL || w.observerRole === filters.observerRole) &&
       (filters.lessonPhase === ALL || w.lessonPhase === filters.lessonPhase)
   );
