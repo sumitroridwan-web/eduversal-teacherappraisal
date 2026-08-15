@@ -207,6 +207,19 @@ async function getGeminiClient(): Promise<GoogleGenAI | null> {
   });
 }
 
+
+/**
+ * AI narrative is written in the appraiser's language rather than translated
+ * afterwards - a second pass over pedagogical judgement would blur it.
+ */
+function languageDirective(language: unknown): string {
+  return language === "id"
+    ? "\n\nWrite every piece of narrative output in Bahasa Indonesia, using natural " +
+        "professional register for Indonesian school leaders. Keep rubric indicator " +
+        "codes (D1.1, W3 and so on) and the terms Glow, Grow and Go unchanged.\n"
+    : "\n\nWrite all narrative output in English.\n";
+}
+
 // API Health
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
@@ -234,6 +247,7 @@ app.post("/api/analyze-lesson", requireAuth, async (req, res) => {
       lessonTopic,
       learningObjectives,
       additionalNotes,
+      language,
     } = req.body;
 
     const parts: any[] = [];
@@ -298,7 +312,7 @@ Rules for classroomConditions:
   return an empty array if the audio carries no usable behavioural signal.
 `;
 
-    parts.push({ text: promptText });
+    parts.push({ text: promptText + languageDirective(language) });
 
     const response = await ai.models.generateContent({
       model: "gemini-3.7-flash",
@@ -407,7 +421,7 @@ app.post("/api/ai-feedback", requireAuth, async (req, res) => {
     }
     const { Type } = await loadGenAI();
 
-    const { teacherName, subject, careerLevel, scoredItems, observerNotes } = req.body;
+    const { teacherName, subject, careerLevel, scoredItems, observerNotes, language } = req.body;
 
     const prompt = `
 You are a senior Eduversal pedagogical appraiser.
@@ -428,7 +442,7 @@ Provide high-impact, empathetic, research-informed feedback aligned with Daniels
 
     const response = await ai.models.generateContent({
       model: "gemini-3.7-flash",
-      contents: prompt,
+      contents: prompt + languageDirective(language),
       config: {
         responseMimeType: "application/json",
         responseSchema: {
@@ -475,6 +489,7 @@ app.post("/api/auto-grade", requireAuth, async (req, res) => {
       indicators = [],
       photos = [],
       classroomConditions = [],
+      language,
     } = req.body;
 
     const prompt = `
@@ -553,7 +568,7 @@ could not be observed and what further evidence would close that gap.
 
     const response = await ai.models.generateContent({
       model: "gemini-3.7-flash",
-      contents: prompt,
+      contents: prompt + languageDirective(language),
       config: {
         responseMimeType: "application/json",
         responseSchema: {

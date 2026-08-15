@@ -11,6 +11,8 @@ import {
   ClipboardCheck,
 } from 'lucide-react';
 import { EduversalLogo } from './EduversalLogo';
+import { useLanguage } from '../i18n/LanguageContext';
+import { LANGUAGES } from '../i18n/translations';
 
 interface NavbarProps {
   currentView: 'FORM' | 'LIST' | 'ANALYTICS' | 'REPORT' | 'SCHOOL_REPORT' | 'WALKTHROUGH';
@@ -27,6 +29,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenRubrics,
   hasActiveRecord,
 }) => {
+  const { language, setLanguage, t } = useLanguage();
+
   // Ends the server session and returns to the password screen.
   const handleLock = async () => {
     try {
@@ -61,7 +65,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   </span>
                 </div>
                 <p className="text-[10px] sm:text-[11px] text-slate-500 leading-none truncate hidden sm:block">
-                  Teacher Appraisal &amp; AI Pedagogical Coaching
+                  {t('nav.tagline')}
                 </p>
               </div>
             </div>
@@ -79,7 +83,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }`}
               >
                 <FileSpreadsheet className="w-3.5 h-3.5" />
-                <span>Observations Portfolio</span>
+                <span>{t('nav.portfolio')}</span>
               </button>
 
               <button
@@ -93,7 +97,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }`}
               >
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Active Observation Sheet</span>
+                <span>{t('nav.activeSheet')}</span>
               </button>
 
               <button
@@ -107,7 +111,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }`}
               >
                 <BarChart3 className="w-3.5 h-3.5" />
-                <span>Overview &amp; School Levels</span>
+                <span>{t('nav.overview')}</span>
               </button>
 
               <button
@@ -121,7 +125,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }`}
               >
                 <FileText className="w-3.5 h-3.5" />
-                <span>School Report</span>
+                <span>{t('nav.schoolReport')}</span>
               </button>
 
               <button
@@ -135,7 +139,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }`}
               >
                 <ClipboardCheck className="w-3.5 h-3.5" />
-                <span>Walkthrough</span>
+                <span>{t('nav.walkthrough')}</span>
               </button>
             </nav>
 
@@ -149,7 +153,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 title="Official Framework 2 Rubrics Handbook & Descriptors"
               >
                 <BookOpen className="w-3.5 h-3.5 text-indigo-600" />
-                <span className="hidden sm:inline">Rubrics</span>
+                <span className="hidden sm:inline">{t('nav.rubrics')}</span>
               </button>
 
               <button
@@ -159,9 +163,33 @@ export const Navbar: React.FC<NavbarProps> = ({
                 className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm transition cursor-pointer whitespace-nowrap"
               >
                 <Plus className="w-4 h-4" />
-                <span className="hidden xs:inline">New Observation</span>
-                <span className="xs:hidden">New</span>
+                <span className="hidden xs:inline">{t('nav.new')}</span>
+                <span className="xs:hidden">{t('nav.newShort')}</span>
               </button>
+
+              {/* Language switcher */}
+              <div
+                className="flex items-center rounded-lg border border-slate-200 bg-white overflow-hidden shadow-2xs"
+                role="group"
+                aria-label={t('nav.language')}
+              >
+                {LANGUAGES.map((lang) => (
+                  <button
+                    key={lang.code}
+                    type="button"
+                    onClick={() => setLanguage(lang.code)}
+                    title={lang.label}
+                    aria-pressed={language === lang.code}
+                    className={`px-2 py-1.5 text-[11px] font-bold transition cursor-pointer ${
+                      language === lang.code
+                        ? 'bg-[#165963] text-white'
+                        : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+                    }`}
+                  >
+                    {lang.short}
+                  </button>
+                ))}
+              </div>
 
               {/* Lock the platform again (ends the session) */}
               <button
@@ -169,8 +197,8 @@ export const Navbar: React.FC<NavbarProps> = ({
                 type="button"
                 onClick={handleLock}
                 className="flex items-center justify-center p-1.5 bg-white hover:bg-slate-50 text-slate-500 hover:text-slate-800 rounded-lg border border-slate-200 transition cursor-pointer shadow-2xs"
-                title="Lock platform and sign out"
-                aria-label="Lock platform and sign out"
+                title={t('nav.lock')}
+                aria-label={t('nav.lock')}
               >
                 <Lock className="w-3.5 h-3.5" />
               </button>
@@ -178,7 +206,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               {/* Appraiser Avatar */}
               <div className="hidden lg:flex items-center gap-2.5 border-l pl-3 border-slate-200">
                 <div className="text-right leading-tight">
-                  <p className="text-xs font-semibold text-slate-800">QA Appraiser</p>
+                  <p className="text-xs font-semibold text-slate-800">{t('nav.appraiser')}</p>
                   <p className="text-[10px] text-slate-400 font-medium">EDUVERSAL</p>
                 </div>
                 <div className="w-8 h-8 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center font-bold text-xs border border-indigo-200">
@@ -202,7 +230,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           }`}
         >
           <FileSpreadsheet className="w-5 h-5 mb-0.5" />
-          <span>Portfolio</span>
+          <span>{t('nav.mobile.portfolio')}</span>
         </button>
 
         <button
@@ -215,7 +243,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           }`}
         >
           <ShieldCheck className="w-5 h-5 mb-0.5" />
-          <span>Observe</span>
+          <span>{t('nav.mobile.observe')}</span>
         </button>
 
         <button
@@ -228,7 +256,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           }`}
         >
           <BarChart3 className="w-5 h-5 mb-0.5" />
-          <span>Analytics</span>
+          <span>{t('nav.mobile.analytics')}</span>
         </button>
 
         <button
@@ -241,7 +269,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           }`}
         >
           <FileText className="w-5 h-5 mb-0.5" />
-          <span>Report</span>
+          <span>{t('nav.mobile.report')}</span>
         </button>
 
         <button
@@ -254,7 +282,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           }`}
         >
           <ClipboardCheck className="w-5 h-5 mb-0.5" />
-          <span>Walk</span>
+          <span>{t('nav.mobile.walkthrough')}</span>
         </button>
 
         <button

@@ -33,6 +33,7 @@ import {
   currentAcademicYear,
 } from '../types';
 import { EduversalLogo } from './EduversalLogo';
+import { useLanguage } from '../i18n/LanguageContext';
 import {
   loadWalkthroughs,
   saveOrUpdateWalkthrough,
@@ -81,6 +82,7 @@ function downloadBlob(blob: Blob, filename: string) {
 }
 
 export const WalkthroughView: React.FC = () => {
+  const { t } = useLanguage();
   const [panel, setPanel] = useState<Panel>('form');
   const [records, setRecords] = useState<WalkthroughRecord[]>([]);
   const [draft, setDraft] = useState<WalkthroughRecord>(createBlankWalkthrough);
@@ -211,26 +213,25 @@ export const WalkthroughView: React.FC = () => {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="text-[11px] font-bold text-indigo-600 uppercase tracking-wider">
-              Educamp • Development of Teaching Proficiency
+              {t('wt.department')}
             </div>
             <h2 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
               <ClipboardCheck className="w-5 h-5 text-[#165963]" />
-              Walkthrough
+              {t('wt.title')}
             </h2>
           </div>
 
           <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
-            {panelBtn('form', isEditing ? 'Edit Visit' : 'New Visit')}
-            {panelBtn('records', `Records (${records.length})`)}
-            {panelBtn('report', 'Graphs & Report')}
+            {panelBtn('form', isEditing ? t('wt.editVisit') : t('wt.newVisit'))}
+            {panelBtn('records', `${t('wt.records')} (${records.length})`)}
+            {panelBtn('report', t('wt.graphsReport'))}
           </div>
         </div>
 
         <div className="mt-3 flex items-start gap-2 p-2.5 rounded-xl bg-sky-50 border border-sky-200">
           <Info className="w-4 h-4 text-sky-600 mt-0.5 shrink-0" />
           <p className="text-xs text-sky-900">
-            <strong>Formative only</strong> — no score, and not used in annual appraisal
-            calculations. Findings are shared directly with the teacher as developmental feedback.
+            <strong>{t('wt.formativeOnly')}</strong> {t('wt.formativeNote')}
           </p>
         </div>
       </div>
@@ -258,7 +259,7 @@ export const WalkthroughView: React.FC = () => {
           )}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
             <div>
-              <label className="block text-slate-600 font-medium mb-1">Teacher Name *</label>
+              <label className="block text-slate-600 font-medium mb-1">{t('wt.teacherName')} *</label>
               <input
                 value={draft.teacherName}
                 onChange={(e) => setField({ teacherName: e.target.value })}
@@ -267,7 +268,7 @@ export const WalkthroughView: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-slate-600 font-medium mb-1">Subject</label>
+              <label className="block text-slate-600 font-medium mb-1">{t('wt.subject')}</label>
               <input
                 value={draft.subject}
                 onChange={(e) => setField({ subject: e.target.value })}
@@ -276,7 +277,7 @@ export const WalkthroughView: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-slate-600 font-medium mb-1">Subject Department</label>
+              <label className="block text-slate-600 font-medium mb-1">{t('wt.subjectDept')}</label>
               <select
                 value={draft.subjectCategory}
                 onChange={(e) => setField({ subjectCategory: e.target.value as SubjectCategory })}
@@ -289,7 +290,7 @@ export const WalkthroughView: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-slate-600 font-medium mb-1">Class Observed</label>
+              <label className="block text-slate-600 font-medium mb-1">{t('wt.classObserved')}</label>
               <input
                 value={draft.classObserved}
                 onChange={(e) => setField({ classObserved: e.target.value })}
@@ -298,7 +299,7 @@ export const WalkthroughView: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-slate-600 font-medium mb-1">Date of Visit</label>
+              <label className="block text-slate-600 font-medium mb-1">{t('wt.dateOfVisit')}</label>
               <input
                 type="date"
                 value={draft.dateOfVisit}
@@ -308,7 +309,7 @@ export const WalkthroughView: React.FC = () => {
             </div>
 
             <div>
-              <label className="block text-slate-600 font-medium mb-1">Time of Visit (start)</label>
+              <label className="block text-slate-600 font-medium mb-1">{t('wt.timeOfVisit')}</label>
               <input
                 type="time"
                 value={draft.timeOfVisit}
@@ -318,7 +319,7 @@ export const WalkthroughView: React.FC = () => {
             </div>
             <div>
               <label className="block text-slate-600 font-medium mb-1">
-                Approximate Duration (min)
+                {t('wt.duration')}
               </label>
               <input
                 type="number"
@@ -329,7 +330,7 @@ export const WalkthroughView: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-slate-600 font-medium mb-1">Observer Name</label>
+              <label className="block text-slate-600 font-medium mb-1">{t('wt.observerName')}</label>
               <input
                 value={draft.observerName}
                 onChange={(e) => setField({ observerName: e.target.value })}
@@ -337,7 +338,7 @@ export const WalkthroughView: React.FC = () => {
               />
             </div>
             <div>
-              <label className="block text-slate-600 font-medium mb-1">Observer Role</label>
+              <label className="block text-slate-600 font-medium mb-1">{t('wt.observerRole')}</label>
               <select
                 value={draft.observerRole}
                 onChange={(e) => setField({ observerRole: e.target.value })}
@@ -351,7 +352,7 @@ export const WalkthroughView: React.FC = () => {
 
             <div>
               <label className="block text-slate-600 font-medium mb-1">
-                Lesson Phase at Time of Visit
+                {t('wt.lessonPhase')}
               </label>
               <select
                 value={draft.lessonPhase}
@@ -364,7 +365,7 @@ export const WalkthroughView: React.FC = () => {
               </select>
             </div>
             <div>
-              <label className="block text-slate-600 font-medium mb-1">School</label>
+              <label className="block text-slate-600 font-medium mb-1">{t('wt.school')}</label>
               <select
                 value={draft.schoolName}
                 onChange={(e) => setField({ schoolName: e.target.value })}
@@ -377,7 +378,7 @@ export const WalkthroughView: React.FC = () => {
               </select>
             </div>
             <div>
-              <label className="block text-slate-600 font-medium mb-1">Academic Year</label>
+              <label className="block text-slate-600 font-medium mb-1">{t('wt.academicYear')}</label>
               <select
                 value={draft.academicYear || currentAcademicYear()}
                 onChange={(e) => setField({ academicYear: e.target.value })}
@@ -392,7 +393,7 @@ export const WalkthroughView: React.FC = () => {
 
           {/* Response key */}
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-[11px] text-slate-600">
-            <strong className="text-slate-800">Response Key:</strong>{' '}
+            <strong className="text-slate-800">{t('wt.responseKey')}</strong>{' '}
             <strong>E</strong> = Evident (clearly observed) • <strong>D</strong> = Developing
             (partially observed / inconsistent) • <strong>N</strong> = Not Observed (may be due to
             lesson phase, not absence of practice)
@@ -456,7 +457,7 @@ export const WalkthroughView: React.FC = () => {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-800 mb-1">
-                Key Observation <span className="text-rose-600">*</span>
+{t('wt.keyObservation')} <span className="text-rose-600">*</span>
               </label>
               <p className="text-[11px] text-slate-500 mb-1.5">
                 A brief, specific observation — a strength, a pattern, or something worth discussing.
@@ -470,7 +471,7 @@ export const WalkthroughView: React.FC = () => {
             </div>
             <div>
               <label className="block text-xs font-bold text-slate-800 mb-1">
-                Suggested Focus <span className="text-slate-400 font-normal">(optional)</span>
+{t('wt.suggestedFocus')} <span className="text-slate-400 font-normal">{t('wt.optional')}</span>
               </label>
               <p className="text-[11px] text-slate-500 mb-1.5">
                 One specific, actionable focus to consider before the next visit — framed as an
@@ -536,7 +537,7 @@ export const WalkthroughView: React.FC = () => {
           {records.length === 0 ? (
             <div className="border border-dashed border-slate-300 rounded-xl py-10 text-center">
               <ClipboardCheck className="w-7 h-7 text-slate-300 mx-auto mb-2" />
-              <p className="text-xs font-semibold text-slate-600">No walkthroughs recorded yet</p>
+              <p className="text-xs font-semibold text-slate-600">{t('wt.noRecords')}</p>
             </div>
           ) : (
             <div className="border border-slate-200 rounded-xl divide-y divide-slate-100 overflow-hidden">
@@ -611,7 +612,7 @@ export const WalkthroughView: React.FC = () => {
             <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
               <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <BarChart3 className="w-4 h-4 text-indigo-600" />
-                Report Scope
+                {t('report.scope')}
               </h3>
               <div className="flex items-center gap-2">
                 <button
@@ -626,7 +627,7 @@ export const WalkthroughView: React.FC = () => {
                   className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 text-xs font-semibold rounded-xl border border-slate-200 transition cursor-pointer shadow-2xs"
                 >
                   <FileType2 className="w-4 h-4 text-indigo-600" />
-                  Download Word
+                  {t('action.downloadWord')}
                 </button>
                 <button
                   type="button"
@@ -639,7 +640,7 @@ export const WalkthroughView: React.FC = () => {
                   className="flex items-center gap-2 px-5 py-2.5 bg-[#165963] hover:bg-[#11474f] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-sm"
                 >
                   <Download className="w-4 h-4" />
-                  Download PDF
+                  {t('action.downloadPdf')}
                 </button>
               </div>
             </div>
@@ -750,7 +751,7 @@ export const WalkthroughView: React.FC = () => {
               <>
                 <section className="mb-7">
                   <h2 className="text-xs font-bold text-[#165963] uppercase tracking-wider pb-1 border-b border-slate-200 mb-3">
-                    Walkthrough Indicator Profile
+                    {t('wt.indicatorProfile')}
                   </h2>
                   <div className="h-64 w-full">
                     <ResponsiveContainer width="100%" height="100%">

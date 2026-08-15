@@ -7,6 +7,7 @@ import {
   currentAcademicYear,
 } from '../types';
 import { EduversalLogo } from './EduversalLogo';
+import { useLanguage } from '../i18n/LanguageContext';
 import {
   ALL,
   SchoolReportFilters,
@@ -54,6 +55,7 @@ function downloadBlob(blob: Blob, filename: string) {
 }
 
 export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }) => {
+  const { t } = useLanguage();
   const [filters, setFilters] = useState<SchoolReportFilters>({
     academicYear: currentAcademicYear(),
     school: ALL,
@@ -104,11 +106,11 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
         <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
           <div>
             <div className="text-[11px] font-bold text-indigo-600 uppercase tracking-wider">
-              Academic Quality Assurance
+              {t('report.qualityAssurance')}
             </div>
             <h2 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
               <FileText className="w-5 h-5 text-[#165963]" />
-              School Observation Report
+              {t('report.schoolObservation')}
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
               Key observations and notes for improvement. Set the scope below, review the
@@ -124,7 +126,7 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
               className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 text-xs font-semibold rounded-xl border border-slate-200 transition cursor-pointer shadow-2xs"
             >
               <FileType2 className="w-4 h-4 text-indigo-600" />
-              Download Word
+              {t('action.downloadWord')}
             </button>
             <button
               type="button"
@@ -133,7 +135,7 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
               className="flex items-center gap-2 px-5 py-2.5 bg-[#165963] hover:bg-[#11474f] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-sm"
             >
               <Download className="w-4 h-4" />
-              Download PDF
+              {t('action.downloadPdf')}
             </button>
           </div>
         </div>
@@ -149,7 +151,7 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
               onChange={(e) => set({ academicYear: e.target.value })}
               className={selectClass}
             >
-              <option value={ALL}>All academic years</option>
+              <option value={ALL}>{t('report.allYears')}</option>
               {ACADEMIC_YEARS.map((y) => (
                 <option key={y} value={y}>{y}</option>
               ))}
@@ -166,7 +168,7 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
               onChange={(e) => set({ school: e.target.value })}
               className={selectClass}
             >
-              <option value={ALL}>All schools</option>
+              <option value={ALL}>{t('report.allSchools')}</option>
               {EDUVERSAL_SCHOOLS.map((s) => (
                 <option key={s} value={s}>{s}</option>
               ))}
@@ -183,7 +185,7 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
               onChange={(e) => set({ schoolLevel: e.target.value })}
               className={selectClass}
             >
-              <option value={ALL}>All school levels</option>
+              <option value={ALL}>{t('report.allLevels')}</option>
               {SCHOOL_LEVELS.map((s) => (
                 <option key={s} value={s}>{s}</option>
               ))}
@@ -200,7 +202,7 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
               onChange={(e) => set({ subjectCategory: e.target.value })}
               className={selectClass}
             >
-              <option value={ALL}>All subjects</option>
+              <option value={ALL}>{t('report.allSubjects')}</option>
               {SUBJECT_CATEGORIES.map((s) => (
                 <option key={s} value={s}>{s}</option>
               ))}
@@ -217,7 +219,7 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
               onChange={(e) => set({ careerLevel: e.target.value })}
               className={selectClass}
             >
-              <option value={ALL}>All career levels</option>
+              <option value={ALL}>{t('report.allCareer')}</option>
               {CAREER_LEVELS.map((s) => (
                 <option key={s} value={s}>{s}</option>
               ))}
@@ -261,7 +263,7 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
             {/* Executive summary */}
             <section className="mb-7">
               <h2 className="text-xs font-bold text-[#165963] uppercase tracking-wider pb-1 border-b border-slate-200 mb-3">
-                Executive Summary
+                {t('report.execSummary')}
               </h2>
               <p className="text-xs text-slate-700 leading-relaxed">
                 Average Framework 2 attainment across the {report.totalObservations} observation
@@ -285,7 +287,7 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
             {/* Domain attainment */}
             <section className="mb-7">
               <h2 className="text-xs font-bold text-[#165963] uppercase tracking-wider pb-1 border-b border-slate-200 mb-3">
-                Domain Attainment
+                {t('report.domainAttainment')}
               </h2>
               <div className="space-y-2.5">
                 {report.domainAverages.map((d) => (
@@ -310,7 +312,7 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
             {/* Key observations */}
             <section className="mb-7">
               <h2 className="text-xs font-bold text-[#165963] uppercase tracking-wider pb-1 border-b border-slate-200 mb-3">
-                Key Observations
+                {t('report.keyObservations')}
               </h2>
               <div className="space-y-4">
                 {report.observations.map((o, i) => (
@@ -382,7 +384,7 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
             {report.priorityImprovements.length > 0 && (
               <section className="mb-7">
                 <h2 className="text-xs font-bold text-[#165963] uppercase tracking-wider pb-1 border-b border-slate-200 mb-3">
-                  Notes for Improvement — Cohort Priorities
+                  {t('report.cohortPriorities')}
                 </h2>
                 <p className="text-xs text-slate-600 mb-2">
                   Indicators most frequently rated Basic or below across the observations in scope.
@@ -401,7 +403,7 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
             {report.bestPractices.length > 0 && (
               <section>
                 <h2 className="text-xs font-bold text-[#165963] uppercase tracking-wider pb-1 border-b border-slate-200 mb-3">
-                  Best Practices to Share
+                  {t('report.bestPractices')}
                 </h2>
                 <p className="text-xs text-slate-500 mb-3">
                   Practice flagged during observation as worth sharing across the department,

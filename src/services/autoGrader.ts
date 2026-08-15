@@ -7,7 +7,8 @@ import { MAX_FEEDBACK_ITEMS, DEFAULT_FEEDBACK_ITEMS } from './glowGrowGo';
  * a deterministic pedagogical evaluation rule engine based on Eduversal rubrics.
  */
 export async function executeAutoGrade(
-  record: TeacherAppraisalRecord
+  record: TeacherAppraisalRecord,
+  language: string = 'en'
 ): Promise<AutoGradeResult> {
   const visibleItems = getItemsForLevel(record.careerLevel);
   const activities = record.activities || [];
@@ -32,6 +33,7 @@ export async function executeAutoGrade(
           source: p.source,
         })),
       classroomConditions: record.aiAnalysis?.classroomConditions || [],
+      language,
       activities: activities.map((act, idx) => ({
         index: idx + 1,
         name: act.name,

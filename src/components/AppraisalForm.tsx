@@ -52,6 +52,7 @@ import { ClassroomPhotoEvidence } from './ClassroomPhotoEvidence';
 import { AutoGradeModal } from './AutoGradeModal';
 import { executeAutoGrade } from '../services/autoGrader';
 import { saveOrUpdateAppraisal } from '../services/storage';
+import { useLanguage } from '../i18n/LanguageContext';
 import {
   generateGlowGrowGo,
   capFeedback,
@@ -72,6 +73,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
   onViewReport,
   onOpenRubrics,
 }) => {
+  const { t, language } = useLanguage();
   const [record, setRecord] = useState<TeacherAppraisalRecord>(initialRecord);
   const [activeSection, setActiveSection] = useState<'ALL' | 'A' | 'B' | 'C' | 'FEEDBACK'>('ALL');
   const [expandedRubricId, setExpandedRubricId] = useState<string | null>(null);
@@ -127,7 +129,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
     setIsAutoGrading(true);
     setShowAutoGradeModal(true);
     try {
-      const result = await executeAutoGrade(record);
+      const result = await executeAutoGrade(record, language);
       setAutoGradeResult(result);
     } catch (err) {
       console.error('Auto-grading evaluation error:', err);
@@ -1246,9 +1248,9 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6 text-slate-800">
           <div className="border-b border-slate-100 pb-4">
             <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-              The Glow / Grow / Go Post-Observation Protocol
+              {t('ggg.title')}
               <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
-                Official Eduversal Debriefing
+                {t('ggg.badge')}
               </span>
             </h2>
             <div className="flex flex-wrap items-end justify-between gap-3">
@@ -1264,7 +1266,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
                 title="Build Glow / Grow / Go from the indicator ratings you have given"
               >
                 <Sparkles className="w-3.5 h-3.5" />
-                Generate from Ratings
+                {t('action.generate')}
               </button>
             </div>
           </div>
@@ -1563,22 +1565,22 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
       <div className="sticky bottom-4 z-40 bg-white/95 backdrop-blur-md border border-slate-200 rounded-2xl p-4 shadow-xl flex flex-wrap items-center justify-between gap-4 text-slate-800">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <div className="text-xs">
-            <span className="text-slate-500">F2 Attainment: </span>
+            <span className="text-slate-500">{t('sheet.attainment')}: </span>
             <strong className="text-indigo-600 font-mono text-sm">
               {stats.totalRaw}/{stats.maxRated} ({stats.percentage}%)
             </strong>
           </div>
           <span className="text-slate-300">|</span>
           <div className="text-xs">
-            <span className="text-slate-500">Indicative Reading: </span>
-            <strong className="text-emerald-600 font-bold">Grade {stats.grade}</strong>
+            <span className="text-slate-500">{t('sheet.indicativeReading')}: </span>
+            <strong className="text-emerald-600 font-bold">{t('sheet.grade')} {stats.grade}</strong>
           </div>
           <span className="text-slate-300">|</span>
 
           {/* Completeness is stated, never hidden: attainment is measured only
               across rated indicators, so the reader must see how many that is. */}
           <div className="text-xs">
-            <span className="text-slate-500">Rated: </span>
+            <span className="text-slate-500">{t('sheet.rated')}: </span>
             <strong
               className={`font-mono ${
                 stats.isComplete ? 'text-emerald-600' : 'text-amber-600'
@@ -1588,7 +1590,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
             </strong>
             {!stats.isComplete && (
               <span className="text-[10px] text-slate-400 ml-1">
-                ({stats.totalItems - stats.itemsScored} not evidenced)
+                ({stats.totalItems - stats.itemsScored} {t('sheet.notEvidenced')})
               </span>
             )}
           </div>
@@ -1602,7 +1604,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
                 className="text-xs font-bold px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 transition cursor-pointer"
                 title="Accept every AI suggestion as your professional judgement"
               >
-                {pendingSuggestions} AI rating{pendingSuggestions === 1 ? '' : 's'} to confirm
+                {pendingSuggestions} {t('sheet.aiToConfirm')}
               </button>
             </>
           )}
@@ -1610,11 +1612,11 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
           <span className="text-slate-300">|</span>
           <span className="text-[10px] text-slate-400">
             {autoSaveState === 'saving'
-              ? 'Saving…'
+              ? t('sheet.saving')
               : autoSaveState === 'saved'
-              ? 'Draft autosaved'
+              ? t('sheet.autosaved')
               : autoSaveState === 'error'
-              ? 'Autosave failed — use Save'
+              ? t('sheet.autosaveFailed')
               : ''}
           </span>
         </div>
@@ -1625,21 +1627,21 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
             onClick={() => handleSaveClick('Draft')}
             className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-medium transition cursor-pointer"
           >
-            Save as Draft
+            {t('action.saveDraft')}
           </button>
           <button
             type="button"
             onClick={() => handleSaveClick('Observation Saved')}
             className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold transition shadow-sm cursor-pointer"
           >
-            Save Observation Session
+            {t('sheet.saveSession')}
           </button>
           <button
             type="button"
             onClick={() => handleSaveClick('Finalized (Conference Complete)')}
             className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold transition shadow-sm cursor-pointer"
           >
-            Finalize &amp; Close Session
+            {t('sheet.finalize')}
           </button>
         </div>
       </div>
