@@ -129,7 +129,23 @@ async function getAccessToken(): Promise<string> {
   });
 
   if (!res.ok) {
-    throw new Error(`Could not obtain a Google access token (${res.status}).`);
+    // Google explains the refusal in the body; passing on only the status left
+    // the actual cause invisible.
+    const detail = await res.text().catch(() => "");
+    let hint = "";
+    if (detail.includes("invalid_grant")) {
+      hint =
+        " This usually means FIREBASE_CLIENT_EMAIL does not match the key in " +
+        "FIREBASE_PRIVATE_KEY, or that service-account key has been deleted. " +
+        "Generate a fresh key and copy both values from the same JSON file.";
+    } else if (detail.includes("invalid_scope") || detail.includes("access_denied")) {
+      hint =
+        " The service account is missing Firestore access. Grant it the " +
+        "'Cloud Datastore User' role in the Google Cloud IAM console.";
+    }
+    throw new Error(
+      `Google refused the service-account sign-in (${res.status}): ${detail.slice(0, 240)}${hint}`
+    );
   }
 
   const json: any = await res.json();
