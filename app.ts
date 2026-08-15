@@ -8,7 +8,8 @@
 import "dotenv/config";
 import express, { NextFunction, Request, Response } from "express";
 import crypto from "crypto";
-import { GoogleGenAI, Type } from "@google/genai";
+// Type-only: erased at compile time, so the SDK is not pulled in at module load.
+import type { GoogleGenAI } from "@google/genai";
 
 const app = express();
 
@@ -176,13 +177,26 @@ app.post("/api/auth/logout", (req, res) => {
   res.json({ success: true });
 });
 
+// The SDK is loaded on first use rather than at module scope: a serverless
+// cold start should not pay for it, and a failure to load it degrades one
+// endpoint instead of taking the whole API down with it.
+let genaiModule: typeof import("@google/genai") | null = null;
+
+async function loadGenAI() {
+  if (!genaiModule) {
+    genaiModule = await import("@google/genai");
+  }
+  return genaiModule;
+}
+
 // Initialize Gemini AI Client
-function getGeminiClient(): GoogleGenAI | null {
+async function getGeminiClient(): Promise<GoogleGenAI | null> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     console.warn("GEMINI_API_KEY is not set.");
     return null;
   }
+  const { GoogleGenAI } = await loadGenAI();
   return new GoogleGenAI({
     apiKey,
     httpOptions: {
@@ -201,12 +215,13 @@ app.get("/api/health", (req, res) => {
 // API: Analyze Lesson Audio or Transcript
 app.post("/api/analyze-lesson", requireAuth, async (req, res) => {
   try {
-    const ai = getGeminiClient();
+    const ai = await getGeminiClient();
     if (!ai) {
       return res.status(500).json({
         error: "Gemini API key is not configured. Please check your environment variables.",
       });
     }
+    const { Type } = await loadGenAI();
 
     const {
       audioBase64,
@@ -352,10 +367,11 @@ Provide a comprehensive, highly constructive pedagogical breakdown in JSON forma
 // API: Generate Custom Glow / Grow / Go & Action Recommendations
 app.post("/api/ai-feedback", requireAuth, async (req, res) => {
   try {
-    const ai = getGeminiClient();
+    const ai = await getGeminiClient();
     if (!ai) {
       return res.status(500).json({ error: "Gemini API key is missing." });
     }
+    const { Type } = await loadGenAI();
 
     const { teacherName, subject, careerLevel, scoredItems, observerNotes } = req.body;
 
@@ -405,10 +421,11 @@ Provide high-impact, empathetic, research-informed feedback aligned with Daniels
 // API: Auto-Grade Teacher Lesson Observation based on Lesson Activities, Notes & Transcripts
 app.post("/api/auto-grade", requireAuth, async (req, res) => {
   try {
-    const ai = getGeminiClient();
+    const ai = await getGeminiClient();
     if (!ai) {
       return res.status(500).json({ error: "Gemini API key is missing." });
     }
+    const { Type } = await loadGenAI();
 
     const {
       teacherName,
