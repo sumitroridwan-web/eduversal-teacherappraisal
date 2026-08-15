@@ -98,14 +98,14 @@ export const AutoGradeModal: React.FC<AutoGradeModalProps> = ({
       <div className="bg-white border border-slate-200 w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] my-auto text-slate-800 animate-in fade-in zoom-in-95">
         {/* Header */}
         <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
-          <div className="flex items-center gap-3">
-            <EduversalLogo className="w-9 h-9" />
-            <div>
-              <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3 min-w-0">
+            <EduversalLogo variant="icon" size={36} className="shrink-0" />
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                 <h3 className="text-base font-bold text-slate-900">
                   AI Auto-Grading &amp; Performance Evaluation
                 </h3>
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100 flex items-center gap-1">
+                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100 flex items-center gap-1 shrink-0">
                   <Sparkles className="w-3 h-3 text-amber-500" />
                   Eduversal F2 Engine
                 </span>
@@ -118,7 +118,7 @@ export const AutoGradeModal: React.FC<AutoGradeModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-full hover:bg-slate-200/70 flex items-center justify-center text-slate-500 hover:text-slate-800 transition cursor-pointer"
+            className="w-8 h-8 shrink-0 rounded-full hover:bg-slate-200/70 flex items-center justify-center text-slate-500 hover:text-slate-800 transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
