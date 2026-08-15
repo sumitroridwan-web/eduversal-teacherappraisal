@@ -89,6 +89,36 @@ export interface LessonActivity {
   studentEvidenceNotes: string; // Observable Student Responses & Misconceptions
 }
 
+/** One timestamped chunk of the lesson transcript. */
+export interface TranscriptSegment {
+  startSeconds: number;
+  timeLabel: string; // mm:ss from the start of the recording
+  text: string;
+}
+
+/**
+ * A classroom-condition observation drawn from the audio, tied back to an
+ * established classroom-management theory rather than left as a bare comment.
+ */
+export interface ClassroomConditionNote {
+  timeLabel: string;
+  condition: string;
+  theory: string; // e.g. "Kounin - Withitness & Overlapping"
+  interpretation: string;
+  impact?: 'Supports Learning' | 'Neutral' | 'Disrupts Learning';
+}
+
+/** A classroom photo, captured live or uploaded, with its caption. */
+export interface LessonPhoto {
+  id: string;
+  dataUrl: string;
+  caption: string;
+  source: 'Camera' | 'Upload';
+  capturedAt: string;
+  isBestPractice: boolean;
+  linkedActivityId?: string;
+}
+
 export interface ItemScoreRecord {
   score: 1 | 2 | 3 | 4 | null;
   notes: string;
@@ -104,15 +134,24 @@ export interface GlowGrowGo {
 export interface AutoGradeResult {
   scores: Array<{
     indicatorCode: string;
-    score: 1 | 2 | 3 | 4;
+    // null means the indicator could not be observed from the captured evidence
+    score: 1 | 2 | 3 | 4 | null;
     rationale: string;
     domainId: string;
     title: string;
+    /** Quoted or cited evidence the rating rests on. */
+    evidenceRefs?: string[];
+    notObservable?: boolean;
   }>;
+  /** Points earned across the indicators that could be rated. */
   overallScore: number;
+  /** Maximum available across rated indicators only, i.e. observedCount * 4. */
   maxScore: number;
   percentage: number;
   grade: 'A' | 'B' | 'C' | 'D' | 'F';
+  observedCount: number;
+  notObservableCount: number;
+  totalIndicatorCount: number;
   glow: string[];
   grow: string[];
   go: string[];
@@ -126,6 +165,7 @@ export interface AiLessonAnalysis {
   studentTalkPercentage: number;
   higherOrderThinkingPercentage: number;
   calpProficiencyNotes?: string;
+  classroomConditions?: ClassroomConditionNote[];
   timeline: Array<{
     phase: string;
     timestamp?: string;
@@ -181,7 +221,11 @@ export interface TeacherAppraisalRecord {
   hasAudioRecording?: boolean;
   audioDurationSeconds?: number;
   audioTranscription?: string;
+  transcriptSegments?: TranscriptSegment[];
   aiAnalysis?: AiLessonAnalysis;
+
+  // Classroom photo evidence and shareable best practices
+  photos?: LessonPhoto[];
   
   // Computed stats cached
   f2RawScore?: number;

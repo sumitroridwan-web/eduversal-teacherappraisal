@@ -43,6 +43,7 @@ import {
 import { AudioLessonRecorder } from './AudioLessonRecorder';
 import { AiAnalysisModal } from './AiAnalysisModal';
 import { LessonActivitiesManager } from './LessonActivitiesManager';
+import { ClassroomPhotoEvidence } from './ClassroomPhotoEvidence';
 import { AutoGradeModal } from './AutoGradeModal';
 import { executeAutoGrade } from '../services/autoGrader';
 
@@ -600,15 +601,22 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
         learningObjectives={record.learningObjectives}
         observerNotes={record.generalObserverNotes}
         existingAnalysis={record.aiAnalysis}
-        onAnalysisComplete={(analysis, transcriptText) => {
+        onAnalysisComplete={(analysis, transcriptText, segments) => {
           setRecord((prev) => ({
             ...prev,
             hasAudioRecording: true,
             audioTranscription: transcriptText || prev.audioTranscription,
+            transcriptSegments: segments?.length ? segments : prev.transcriptSegments,
             aiAnalysis: analysis,
           }));
           setShowAiModal(true);
         }}
+      />
+
+      {/* Classroom Photo Evidence & Best Practices */}
+      <ClassroomPhotoEvidence
+        photos={record.photos || []}
+        onChange={(photos) => setRecord((prev) => ({ ...prev, photos }))}
       />
 
       {/* Live F2 Score Summary Card */}

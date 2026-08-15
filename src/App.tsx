@@ -35,10 +35,15 @@ export default function App() {
 
   // Handle Save
   const handleSaveAppraisal = (record: TeacherAppraisalRecord) => {
-    const saved = saveOrUpdateAppraisal(record);
-    setCurrentAppraisal(saved);
-    const updatedAll = loadAppraisals();
-    setAppraisals(updatedAll);
+    try {
+      const saved = saveOrUpdateAppraisal(record);
+      setCurrentAppraisal(saved);
+      const updatedAll = loadAppraisals();
+      setAppraisals(updatedAll);
+    } catch (e: any) {
+      // Surface it rather than letting the success toast lie about the save.
+      window.alert(e?.message || 'The observation could not be saved.');
+    }
   };
 
   // Handle Create New Appraisal

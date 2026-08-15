@@ -277,6 +277,25 @@ Provide a comprehensive, highly constructive pedagogical breakdown in JSON forma
 - grow: targeted reflective growth questions for the post-conference.
 - go: concrete, time-bound next steps and actionable commitments for the teacher.
 - languageProficiency: analysis of CALP (Cognitive Academic Language Proficiency) and BICS usage.
+- classroomConditions: what the audio reveals about the conditions for learning -
+  noise and its source, transitions, off-task drift, teacher responses to
+  behaviour, pacing, group dynamics, tone and rapport.
+
+Rules for classroomConditions:
+- Anchor every entry to a time from the transcript (mm:ss). The transcript
+  provided is already timestamped in [mm:ss] form - reuse those stamps.
+- Name the classroom-management theory the observation illustrates, choosing
+  the one that genuinely fits, e.g. Kounin (withitness, overlapping, momentum,
+  group alerting, ripple effect), Marzano (rules and procedures, teacher-student
+  relationships), Canter (assertive discipline), Glasser (choice theory),
+  Dreikurs (mistaken goals, democratic classroom), Jones (physical proximity,
+  say-see-do teaching), Rosenshine (principles of instruction), Vygotsky (ZPD,
+  scaffolding) or Bandura (modelling, self-efficacy).
+- interpretation: explain what the moment shows through that theory, in the
+  appraiser's professional voice, referring to what was actually heard.
+- impact: whether the condition supported learning, was neutral, or disrupted it.
+- Report only what the audio actually evidences. Do not invent incidents, and
+  return an empty array if the audio carries no usable behavioural signal.
 `;
 
     parts.push({ text: promptText });
@@ -294,6 +313,21 @@ Provide a comprehensive, highly constructive pedagogical breakdown in JSON forma
             studentTalkPercentage: { type: Type.NUMBER, description: "Estimated Student Talk Time percentage 0-100" },
             higherOrderThinkingPercentage: { type: Type.NUMBER, description: "Higher-order questioning/activity percentage 0-100" },
             calpProficiencyNotes: { type: Type.STRING, description: "Analysis of Academic Language (CALP) & BICS clarity" },
+            classroomConditions: {
+              type: Type.ARRAY,
+              description: "Classroom conditions heard in the audio, each read through a named classroom-management theory",
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  timeLabel: { type: Type.STRING, description: "mm:ss taken from the timestamped transcript" },
+                  condition: { type: Type.STRING, description: "What was actually heard" },
+                  theory: { type: Type.STRING, description: "e.g. 'Kounin - Withitness', 'Rosenshine - Guided Practice'" },
+                  interpretation: { type: Type.STRING, description: "What it shows when read through that theory" },
+                  impact: { type: Type.STRING, description: "Supports Learning | Neutral | Disrupts Learning" },
+                },
+                required: ["timeLabel", "condition", "theory", "interpretation"],
+              },
+            },
             timeline: {
               type: Type.ARRAY,
               items: {
@@ -439,6 +473,8 @@ app.post("/api/auto-grade", requireAuth, async (req, res) => {
       transcript,
       activities = [],
       indicators = [],
+      photos = [],
+      classroomConditions = [],
     } = req.body;
 
     const prompt = `
@@ -471,13 +507,48 @@ ${JSON.stringify(
   2
 )}
 
+Captioned Photo Evidence (${photos.length} photos):
+${JSON.stringify(photos, null, 2)}
+
+Classroom Conditions Heard in the Audio (${classroomConditions.length} entries):
+${JSON.stringify(classroomConditions, null, 2)}
+
 Scoring Guidelines for 4-Point Rubric:
 - 4 (Distinguished): Exemplary, seamless student autonomy, deep Bloom's HOTS synthesis, 100% engagement, rigorous CALP discourse.
 - 3 (Proficient): Solid, consistent mastery, clear objectives, guided practice, active student participation, effective feedback.
 - 2 (Basic): Inconsistent implementation, teacher-dominated talk, basic tasks, surface understanding, minor timing gaps.
 - 1 (Unsatisfactory): Lacks objective alignment, disengaged students, poor classroom management, misconceptions unaddressed.
 
-Analyze all available activities, teacher actions, questions asked, and student evidence to score EVERY listed indicator (1, 2, 3, or 4) with a specific pedagogical rationale. Also generate structured Glow / Grow / Go feedback items and a summary evaluation.
+EVIDENCE RULES - these matter more than producing a full set of scores:
+
+1. Score an indicator ONLY where the captured evidence actually speaks to it.
+   The evidence available to you is: the lesson activities timeline, the
+   observer's notes, the timestamped transcript, the photo captions, and the
+   classroom-condition entries. Nothing else exists.
+
+2. Where there is no evidence for an indicator, set "notObservable": true,
+   set "score" to null, and write the rationale as "Not observable - " plus a
+   short statement of what was missing (e.g. "Not observable - no assessment
+   activity or student work was captured in the recording, notes or photos.").
+   Do NOT guess, do NOT infer from the subject or career level, and do NOT
+   award a default rating to fill the sheet. An honest gap is worth more to
+   the teacher than an invented score.
+
+3. Every rationale for a scored indicator MUST cite where the evidence came
+   from, quoting or naming it: a transcript moment with its [mm:ss] stamp, an
+   activity by name and time range, a photo by its caption, or a line from the
+   observer's notes. Put those citations in "evidenceRefs" as well, one per
+   source, each written so an appraiser can find it again - for example
+   "Transcript [12:40]: 'so why did the volume change?'", "Activity 3: Guided
+   Group Problem-Solving (08:20-08:35)", "Photo: 'Success criteria displayed
+   on the board'", or "Observer note: students re-grouped after the demo".
+
+4. A rationale with no citable evidence behind it is not acceptable. If you
+   cannot cite it, the indicator is not observable.
+
+Also generate Glow / Grow / Go feedback and a summary evaluation, each grounded
+in the same cited evidence. In the summary, state plainly how many indicators
+could not be observed and what further evidence would close that gap.
 `;
 
     const response = await ai.models.generateContent({
@@ -498,10 +569,26 @@ Analyze all available activities, teacher actions, questions asked, and student 
                 type: Type.OBJECT,
                 properties: {
                   indicatorCode: { type: Type.STRING },
-                  score: { type: Type.INTEGER, description: "1 to 4 rating" },
-                  rationale: { type: Type.STRING, description: "Specific evidence-based justification" },
+                  score: {
+                    type: Type.INTEGER,
+                    nullable: true,
+                    description: "1 to 4 rating, or null when the indicator was not observable",
+                  },
+                  notObservable: {
+                    type: Type.BOOLEAN,
+                    description: "True when the captured evidence does not speak to this indicator",
+                  },
+                  rationale: {
+                    type: Type.STRING,
+                    description: "Justification citing the specific evidence it rests on",
+                  },
+                  evidenceRefs: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING },
+                    description: "Each source cited, e.g. \"Transcript [12:40]: '...'\" or \"Photo: 'caption'\"",
+                  },
                 },
-                required: ["indicatorCode", "score", "rationale"],
+                required: ["indicatorCode", "rationale"],
               },
             },
             glow: {

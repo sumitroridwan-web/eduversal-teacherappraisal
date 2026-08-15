@@ -24,8 +24,22 @@ export function loadAppraisals(): TeacherAppraisalRecord[] {
 export function saveAppraisals(appraisals: TeacherAppraisalRecord[]): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(appraisals));
-  } catch (e) {
+  } catch (e: any) {
     console.error('Failed to save appraisals to localStorage', e);
+
+    // Photo evidence is stored inline, so the browser quota is a real ceiling.
+    // Failing loudly matters here: swallowing this silently would let an
+    // appraiser finish a lesson believing their observation had been saved.
+    const isQuota =
+      e?.name === 'QuotaExceededError' ||
+      e?.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+      e?.code === 22;
+
+    throw new Error(
+      isQuota
+        ? 'This browser is out of local storage, so the observation was NOT saved. Remove some photo evidence, or export and clear older observations, then save again.'
+        : 'The observation could not be saved to this browser.'
+    );
   }
 }
 

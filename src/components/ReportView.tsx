@@ -39,6 +39,11 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
   const stats = calculateF2Scores(record.careerLevel, record.scores);
   const comp = calculateF2Predicate(stats.percentage);
 
+  // Only captioned photos carry meaning in a report, so uncaptioned ones are
+  // left out rather than printed as unexplained images.
+  const captionedPhotos = (record.photos || []).filter((p) => p.caption.trim());
+  const bestPractices = captionedPhotos.filter((p) => p.isBestPractice);
+
   // Group items by Domain
   const domainGroups: Record<string, typeof items> = {};
   items.forEach((item) => {
@@ -314,6 +319,135 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
             </div>
           </div>
         </div>
+
+        {/* Classroom Conditions Read Against Management Theory */}
+        {record.aiAnalysis?.classroomConditions && record.aiAnalysis.classroomConditions.length > 0 && (
+          <div className="mb-8">
+            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3 pb-1 border-b border-slate-200 flex items-center justify-between">
+              <span>Classroom Conditions &amp; Management Analysis</span>
+              <span className="text-[10px] text-slate-500 font-normal">Evidenced from lesson audio</span>
+            </h3>
+
+            <div className="space-y-2.5 text-xs">
+              {record.aiAnalysis.classroomConditions.map((c, i) => (
+                <div key={i} className="p-3 rounded-xl border border-slate-200 bg-slate-50">
+                  <div className="flex flex-wrap items-center gap-2 mb-1">
+                    <span className="font-mono text-[11px] font-bold px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-700">
+                      {c.timeLabel}
+                    </span>
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-700">
+                      {c.theory}
+                    </span>
+                    {c.impact && (
+                      <span
+                        className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${
+                          c.impact === 'Supports Learning'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : c.impact === 'Disrupts Learning'
+                            ? 'bg-rose-50 text-rose-700 border-rose-200'
+                            : 'bg-slate-100 text-slate-600 border-slate-200'
+                        }`}
+                      >
+                        {c.impact}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-slate-800 font-medium">{c.condition}</p>
+                  <p className="text-slate-600 mt-0.5">{c.interpretation}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Captioned Photo Evidence */}
+        {captionedPhotos.length > 0 && (
+          <div className="mb-8">
+            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3 pb-1 border-b border-slate-200 flex items-center justify-between">
+              <span>Classroom Photo Evidence ({captionedPhotos.length})</span>
+              <span className="text-[10px] text-slate-500 font-normal">Captured during observation</span>
+            </h3>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {captionedPhotos.map((photo) => (
+                <figure key={photo.id} className="border border-slate-200 rounded-xl overflow-hidden bg-white break-inside-avoid">
+                  <img
+                    src={photo.dataUrl}
+                    alt={photo.caption}
+                    className="w-full h-32 object-cover"
+                  />
+                  <figcaption className="p-2 text-[11px] text-slate-700 leading-snug">
+                    {photo.caption}
+                    {photo.isBestPractice && (
+                      <span className="block mt-1 text-[10px] font-bold text-amber-700 uppercase tracking-wider">
+                        Best Practice
+                      </span>
+                    )}
+                  </figcaption>
+                </figure>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Shareable Best Practices */}
+        {bestPractices.length > 0 && (
+          <div className="mb-8">
+            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3 pb-1 border-b border-slate-200 flex items-center justify-between">
+              <span>Lesson Best Practices to Share ({bestPractices.length})</span>
+              <span className="text-[10px] text-slate-500 font-normal">For departmental dissemination</span>
+            </h3>
+
+            <div className="space-y-2 text-xs">
+              {bestPractices.map((photo, i) => (
+                <div key={photo.id} className="flex gap-3 p-2.5 rounded-xl border border-amber-200 bg-amber-50/60">
+                  <img
+                    src={photo.dataUrl}
+                    alt={photo.caption}
+                    className="w-16 h-16 object-cover rounded-lg border border-amber-200 shrink-0"
+                  />
+                  <div>
+                    <div className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">
+                      Practice {i + 1}
+                    </div>
+                    <p className="text-slate-800 mt-0.5">{photo.caption}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Timestamped Lesson Transcript */}
+        {(record.transcriptSegments?.length || record.audioTranscription) && (
+          <div className="mb-8">
+            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3 pb-1 border-b border-slate-200 flex items-center justify-between">
+              <span>Timestamped Lesson Transcript</span>
+              <span className="text-[10px] text-slate-500 font-normal">
+                {record.transcriptSegments?.length
+                  ? `${record.transcriptSegments.length} captured segments`
+                  : 'Captured audio transcription'}
+              </span>
+            </h3>
+
+            {record.transcriptSegments?.length ? (
+              <div className="space-y-1 text-xs max-h-80 overflow-y-auto pr-1">
+                {record.transcriptSegments.map((seg, i) => (
+                  <div key={i} className="flex gap-2.5">
+                    <span className="font-mono text-[11px] text-indigo-700 font-semibold shrink-0 w-12">
+                      {seg.timeLabel}
+                    </span>
+                    <span className="text-slate-700">{seg.text}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">
+                {record.audioTranscription}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* Structured Lesson Activities & Observation Timeline */}
         {record.activities && record.activities.length > 0 && (

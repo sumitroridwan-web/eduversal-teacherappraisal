@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Mic, Square, Play, Pause, Upload, Sparkles, Volume2, AlertCircle, RefreshCw, Clock, CheckCircle2 } from 'lucide-react';
-import { AiLessonAnalysis, CareerLevel } from '../types';
+import { AiLessonAnalysis, CareerLevel, TranscriptSegment } from '../types';
 
 interface AudioLessonRecorderProps {
   teacherName: string;
@@ -10,7 +10,7 @@ interface AudioLessonRecorderProps {
   lessonTopic: string;
   learningObjectives?: string;
   observerNotes?: string;
-  onAnalysisComplete: (analysis: AiLessonAnalysis, transcriptText?: string) => void;
+  onAnalysisComplete: (analysis: AiLessonAnalysis, transcriptText?: string, segments?: TranscriptSegment[]) => void;
   existingAnalysis?: AiLessonAnalysis;
 }
 
@@ -31,6 +31,7 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [audioBase64, setAudioBase64] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<string>('');
+  const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [audioMimeType, setAudioMimeType] = useState<string>('audio/webm');
@@ -43,6 +44,10 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationFrameRef = useRef<number | null>(null);
   const speechRecognitionRef = useRef<any>(null);
+  // Elapsed seconds, mirrored in a ref so the speech callback can stamp a
+  // segment without being re-created on every tick.
+  const recordingTimeRef = useRef(0);
+  const finalisedResultsRef = useRef(0);
 
   // Format seconds to mm:ss
   const formatTime = (seconds: number) => {
@@ -114,12 +119,22 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
           recognition.lang = 'en-US';
 
           recognition.onresult = (event: any) => {
-            let fullText = '';
-            for (let i = 0; i < event.results.length; i++) {
-              fullText += event.results[i][0].transcript + ' ';
-            }
-            if (fullText.trim()) {
-              setTranscript((prev) => (prev ? prev + ' ' + fullText.trim() : fullText.trim()));
+            // Only append results the engine has finalised, and only ones not
+            // already recorded - onresult replays the whole results list each
+            // time, which previously duplicated the transcript on every event.
+            for (let i = finalisedResultsRef.current; i < event.results.length; i++) {
+              const result = event.results[i];
+              if (!result.isFinal) continue;
+
+              const text = String(result[0].transcript).trim();
+              finalisedResultsRef.current = i + 1;
+              if (!text) continue;
+
+              const at = recordingTimeRef.current;
+              const stamp = formatTime(at);
+
+              setSegments((prev) => [...prev, { startSeconds: at, timeLabel: stamp, text }]);
+              setTranscript((prev) => (prev ? `${prev}\n[${stamp}] ${text}` : `[${stamp}] ${text}`));
             }
           };
 
@@ -131,12 +146,18 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
       }
 
       mediaRecorder.start(1000); // 1 sec chunks
+      recordingTimeRef.current = 0;
+      finalisedResultsRef.current = 0;
+      setSegments([]);
       setIsRecording(true);
       setIsPaused(false);
       setRecordingTime(0);
 
       timerIntervalRef.current = setInterval(() => {
-        setRecordingTime((t) => t + 1);
+        setRecordingTime((t) => {
+          recordingTimeRef.current = t + 1;
+          return t + 1;
+        });
       }, 1000);
     } catch (err: any) {
       console.error('Error accessing microphone', err);
@@ -168,7 +189,10 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
       mediaRecorderRef.current.resume();
       setIsPaused(false);
       timerIntervalRef.current = setInterval(() => {
-        setRecordingTime((t) => t + 1);
+        setRecordingTime((t) => {
+          recordingTimeRef.current = t + 1;
+          return t + 1;
+        });
       }, 1000);
     } else {
       mediaRecorderRef.current.pause();
@@ -264,7 +288,7 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
         throw new Error(json.error || 'Failed to analyze lesson');
       }
 
-      onAnalysisComplete(json.data, transcript);
+      onAnalysisComplete(json.data, transcript, segments);
     } catch (err: any) {
       console.error('AI Analysis failed:', err);
       setAnalysisError(err.message || 'An error occurred while contacting the Gemini AI service.');

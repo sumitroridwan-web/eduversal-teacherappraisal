@@ -38,13 +38,13 @@ export const AutoGradeModal: React.FC<AutoGradeModalProps> = ({
 }) => {
   const [selectedTab, setSelectedTab] = useState<'scores' | 'feedback' | 'summary'>('scores');
   // Allow user to toggle / modify scores before applying
-  const [customScores, setCustomScores] = useState<Record<string, { score: 1 | 2 | 3 | 4; rationale: string }>>({});
+  const [customScores, setCustomScores] = useState<Record<string, { score: 1 | 2 | 3 | 4 | null; rationale: string }>>({});
   const [includeGlowGrowGo, setIncludeGlowGrowGo] = useState(true);
 
   // Sync result to local editable state
   React.useEffect(() => {
     if (result && result.scores) {
-      const initial: Record<string, { score: 1 | 2 | 3 | 4; rationale: string }> = {};
+      const initial: Record<string, { score: 1 | 2 | 3 | 4 | null; rationale: string }> = {};
       result.scores.forEach((s) => {
         initial[s.indicatorCode] = { score: s.score, rationale: s.rationale };
       });
@@ -54,7 +54,7 @@ export const AutoGradeModal: React.FC<AutoGradeModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleScoreChange = (indicatorCode: string, newScore: 1 | 2 | 3 | 4) => {
+  const handleScoreChange = (indicatorCode: string, newScore: 1 | 2 | 3 | 4 | null) => {
     setCustomScores((prev) => ({
       ...prev,
       [indicatorCode]: {
@@ -68,12 +68,16 @@ export const AutoGradeModal: React.FC<AutoGradeModalProps> = ({
     if (!result) return;
     const formattedScores: Record<string, { score: 1 | 2 | 3 | 4 | null; notes: string }> = {};
 
-    Object.entries(customScores).forEach(([code, data]: [string, { score: 1 | 2 | 3 | 4; rationale: string }]) => {
-      formattedScores[code] = {
-        score: data.score,
-        notes: `[Auto-Graded] ${data.rationale}`,
-      };
-    });
+    Object.entries(customScores).forEach(
+      ([code, data]: [string, { score: 1 | 2 | 3 | 4 | null; rationale: string }]) => {
+        // Not-observable indicators are left unscored; the rationale is still
+        // written through so the gap is recorded on the sheet.
+        formattedScores[code] = {
+          score: data.score,
+          notes: `[Auto-Graded] ${data.rationale}`,
+        };
+      }
+    );
 
     const feedback = includeGlowGrowGo
       ? {
@@ -88,9 +92,11 @@ export const AutoGradeModal: React.FC<AutoGradeModalProps> = ({
   };
 
   // Recalculate live total from customScores
-  const currentScoresList: Array<{ score: 1 | 2 | 3 | 4; rationale: string }> = Object.values(customScores);
+  const currentScoresList: Array<{ score: 1 | 2 | 3 | 4 | null; rationale: string }> = Object.values(customScores);
   const currentTotal: number = currentScoresList.reduce((acc: number, curr) => acc + (curr.score || 0), 0);
-  const maxPossible = (result?.scores.length || 0) * 4;
+  const ratedCount = currentScoresList.filter((s) => typeof s.score === 'number').length;
+  const notObservableCount = currentScoresList.length - ratedCount;
+  const maxPossible = ratedCount * 4;
   const currentPercentage = maxPossible > 0 ? Math.round((currentTotal / maxPossible) * 100) : 0;
 
   return (
@@ -172,11 +178,16 @@ export const AutoGradeModal: React.FC<AutoGradeModalProps> = ({
                 </div>
 
                 <div className="bg-white/90 p-3 rounded-xl border border-slate-200 shadow-2xs">
-                  <span className="text-[11px] text-slate-500 font-medium block">Indicators Evaluated</span>
+                  <span className="text-[11px] text-slate-500 font-medium block">Indicators Rated</span>
                   <div className="flex items-baseline gap-1.5 mt-0.5">
-                    <span className="text-xl font-bold text-teal-700">{result.scores.length}</span>
-                    <span className="text-[10px] text-slate-400">F2 items</span>
+                    <span className="text-xl font-bold text-teal-700">{ratedCount}</span>
+                    <span className="text-[10px] text-slate-400">of {result.scores.length}</span>
                   </div>
+                  {notObservableCount > 0 && (
+                    <span className="text-[10px] text-slate-500 block mt-0.5">
+                      {notObservableCount} not observable
+                    </span>
+                  )}
                 </div>
 
                 <div className="bg-white/90 p-3 rounded-xl border border-slate-200 shadow-2xs">
@@ -243,6 +254,9 @@ export const AutoGradeModal: React.FC<AutoGradeModalProps> = ({
                       {currentScoresList.filter((s) => s.score === 4).length} Distinguished •{' '}
                       {currentScoresList.filter((s) => s.score === 3).length} Proficient •{' '}
                       {currentScoresList.filter((s) => s.score === 2).length} Basic
+                      {notObservableCount > 0 && (
+                        <> • <span className="text-slate-500 font-semibold">{notObservableCount} Not Observable</span></>
+                      )}
                     </span>
                   </div>
 
@@ -265,14 +279,48 @@ export const AutoGradeModal: React.FC<AutoGradeModalProps> = ({
                               </span>
                               <span className="font-bold text-slate-900">{scItem.title}</span>
                               <span className="text-[10px] text-slate-400">{scItem.domainId}</span>
+                              {current.score === null && (
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                                  NOT OBSERVABLE
+                                </span>
+                              )}
                             </div>
-                            <p className="text-slate-600 text-[11px] leading-relaxed">
+                            <p
+                              className={`text-[11px] leading-relaxed ${
+                                current.score === null ? 'text-slate-500 italic' : 'text-slate-600'
+                              }`}
+                            >
                               {scItem.rationale}
                             </p>
+
+                            {scItem.evidenceRefs && scItem.evidenceRefs.length > 0 && (
+                              <ul className="mt-1.5 space-y-0.5">
+                                {scItem.evidenceRefs.map((ref, i) => (
+                                  <li
+                                    key={i}
+                                    className="text-[10px] text-slate-500 pl-2 border-l-2 border-slate-200 break-words"
+                                  >
+                                    {ref}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
                           </div>
 
                           {/* Score Selector */}
                           <div className="flex items-center gap-1 shrink-0 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                            <button
+                              type="button"
+                              onClick={() => handleScoreChange(scItem.indicatorCode, null)}
+                              className={`px-2 h-8 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                                current.score === null
+                                  ? 'bg-slate-600 text-white shadow-xs'
+                                  : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200'
+                              }`}
+                              title="Not observable from the captured evidence"
+                            >
+                              N/O
+                            </button>
                             {([1, 2, 3, 4] as const).map((rating) => {
                               const isSelected = current.score === rating;
                               let colorClass = 'text-slate-600 hover:text-slate-900 hover:bg-slate-200';

@@ -23,6 +23,14 @@ export async function executeAutoGrade(
       learningObjectives: record.learningObjectives,
       observerNotes: record.generalObserverNotes,
       transcript: record.audioTranscription,
+      photos: (record.photos || [])
+        .filter((p) => p.caption.trim())
+        .map((p) => ({
+          caption: p.caption.trim(),
+          isBestPractice: p.isBestPractice,
+          source: p.source,
+        })),
+      classroomConditions: record.aiAnalysis?.classroomConditions || [],
       activities: activities.map((act, idx) => ({
         index: idx + 1,
         name: act.name,
@@ -61,278 +69,339 @@ export async function executeAutoGrade(
 }
 
 /**
- * Intelligent Rule-Based Pedagogical Auto-Grading Engine
+ * Offline pedagogical rule engine, used when the AI endpoint is unavailable.
+ *
+ * It only rates an indicator where the captured evidence actually speaks to
+ * it. Anything else comes back as "not observable" with the gap named, rather
+ * than a default rating, so an appraiser is never handed an invented score.
  */
+
+interface EvidenceItem {
+  /** How an appraiser would locate this again, e.g. "Transcript [04:12]". */
+  ref: string;
+  text: string;
+}
+
+function buildEvidenceIndex(record: TeacherAppraisalRecord, activities: LessonActivity[]): EvidenceItem[] {
+  const index: EvidenceItem[] = [];
+
+  activities.forEach((act, i) => {
+    const where = `Activity ${i + 1}: ${act.name}${act.timeRange ? ` (${act.timeRange})` : ''}`;
+    const body = [act.name, act.modality, act.teacherNotes, act.studentEvidenceNotes]
+      .filter(Boolean)
+      .join('. ');
+    if (body.trim()) index.push({ ref: where, text: body });
+  });
+
+  if (record.generalObserverNotes?.trim()) {
+    index.push({ ref: 'Observer notes', text: record.generalObserverNotes });
+  }
+  if (record.learningObjectives?.trim()) {
+    index.push({ ref: 'Stated learning objectives', text: record.learningObjectives });
+  }
+
+  const segments = record.transcriptSegments || [];
+  if (segments.length) {
+    segments.forEach((seg) => {
+      if (seg.text.trim()) index.push({ ref: `Transcript [${seg.timeLabel}]`, text: seg.text });
+    });
+  } else if (record.audioTranscription?.trim()) {
+    index.push({ ref: 'Lesson transcript', text: record.audioTranscription });
+  }
+
+  (record.photos || []).forEach((photo) => {
+    if (photo.caption.trim()) {
+      index.push({ ref: `Photo: "${photo.caption.trim()}"`, text: photo.caption });
+    }
+  });
+
+  (record.aiAnalysis?.classroomConditions || []).forEach((c) => {
+    index.push({
+      ref: `Classroom conditions [${c.timeLabel}] - ${c.theory}`,
+      text: `${c.condition} ${c.interpretation}`,
+    });
+  });
+
+  return index;
+}
+
+/** Evidence items matching a pattern, most useful first. */
+function matchEvidence(index: EvidenceItem[], pattern: RegExp, limit = 2): EvidenceItem[] {
+  return index.filter((item) => pattern.test(item.text)).slice(0, limit);
+}
+
+function citation(hits: EvidenceItem[]): string {
+  return hits
+    .map((h) => {
+      const snippet = h.text.trim().replace(/\s+/g, ' ').slice(0, 90);
+      return `${h.ref}: "${snippet}${h.text.trim().length > 90 ? '…' : ''}"`;
+    })
+    .join('; ');
+}
+
+interface IndicatorRule {
+  /** Evidence that must exist for the indicator to be rateable at all. */
+  probe: RegExp;
+  /** Stronger evidence that lifts the rating. */
+  strong?: RegExp;
+  /** What was missing, used in the not-observable rationale. */
+  missing: string;
+  strongNote: string;
+  presentNote: string;
+}
+
+const GENERIC_RULE: IndicatorRule = {
+  probe: /(student|teacher|lesson|task|activity|question|group|explain)/i,
+  strong: /(all students|every student|consistently|throughout|independent)/i,
+  missing: 'no activity, transcript, note or photo addressed this indicator',
+  strongNote: 'sustained practice evidenced across the captured lesson record',
+  presentNote: 'practice evidenced in the captured lesson record',
+};
+
+const INDICATOR_RULES: Record<string, IndicatorRule> = {
+  D1_1: {
+    probe: /(hook|warm-up|introduction|modeling|guided|independent|plenary|exit ticket|closure|phase|sequence|transition)/i,
+    strong: /(timing|time range|pacing|sequence|transition)/i,
+    missing: 'no lesson phases or timings were recorded',
+    strongNote: 'lesson phases and their timings are explicit and sequenced',
+    presentNote: 'a workable lesson sequence is evidenced',
+  },
+  D1_2: {
+    probe: /(objective|learning intention|swbat|goal|success criteria)/i,
+    strong: /(swbat|analyze|evaluate|create|calculate|explain|demonstrate|justify|success criteria|measurable)/i,
+    missing: 'no learning objectives were captured',
+    strongNote: 'objectives are measurable and framed around student mastery',
+    presentNote: 'objectives are stated but broadly framed',
+  },
+  D1_3: {
+    probe: /(objective|topic|curriculum|align|content|task)/i,
+    strong: /(align|directly support|builds on|prerequisite)/i,
+    missing: 'neither objectives nor lesson content were captured in enough detail to judge alignment',
+    strongNote: 'tasks map directly onto the stated objectives',
+    presentNote: 'lesson content is broadly consistent with the topic',
+  },
+  D1_4: {
+    probe: /(differentiat|scaffold|tier|extension|support|modified|remediation|advanced|SEN|ability)/i,
+    strong: /(differentiat|tier|extension|remediation)/i,
+    missing: 'no differentiation, scaffolding or learner-support evidence was captured',
+    strongNote: 'differentiated tiers and targeted scaffolding are evidenced',
+    presentNote: 'some learner support is evidenced',
+  },
+  D1_5: {
+    probe: /(group|pair|individual|independent|collaborat|whole class|discussion)/i,
+    strong: /(group|pair|collaborat)/i,
+    missing: 'no grouping or task-modality information was captured',
+    strongNote: 'a deliberate balance of individual and collaborative work is evidenced',
+    presentNote: 'a working mix of task modalities is evidenced',
+  },
+  D3_5: {
+    probe: /(why|how|question|ask|analy|compar|justify|evaluat|explain|what if|predict)/i,
+    strong: /(why|justify|analy|evaluat|what if|hypothes|critique|compare)/i,
+    missing: 'no questioning was captured in the transcript or notes',
+    strongNote: 'questioning repeatedly pushes into analysis and justification',
+    presentNote: 'questioning is present but largely recall-level',
+  },
+  D3_10: {
+    probe: /(participat|all students|volunteer|cold call|hands up|pair share|whiteboard|group|responded)/i,
+    strong: /(all students|every student|cold call|pair share|mini-whiteboard|100%)/i,
+    missing: 'no evidence of how widely students participated was captured',
+    strongNote: 'participation routines reach the whole class, not only volunteers',
+    presentNote: 'student participation is evidenced',
+  },
+  D3_11: {
+    probe: /(wait|pause|probe|follow-up|elaborate|clarif|rephrase|prompt)/i,
+    strong: /(wait time|probing|follow-up|elaborate|unpack)/i,
+    missing: 'no evidence of wait time or follow-up questioning was captured',
+    strongNote: 'wait time and probing extend student answers',
+    presentNote: 'some follow-up questioning is evidenced',
+  },
+  D3_18: {
+    probe: /(vocabulary|terminology|academic language|calp|keyword|glossary|define|term)/i,
+    strong: /(academic language|calp|terminology|glossary|precise)/i,
+    missing: 'no academic-language or vocabulary work was captured',
+    strongNote: 'subject-specific academic register is taught and required of students',
+    presentNote: 'subject vocabulary is introduced in context',
+  },
+  D3_19: {
+    probe: /(closure|plenary|summary|recap|reflect|exit ticket|conclude|wrap)/i,
+    strong: /(plenary|exit ticket|self-assessment|consolidat)/i,
+    missing: 'the end of the lesson was not captured',
+    strongNote: 'a purposeful plenary consolidates the learning with student voice',
+    presentNote: 'the lesson is drawn to a close with a summary',
+  },
+  D2_1: {
+    probe: /(routine|transition|pacing|on task|expectation|procedure|settle|line up|momentum)/i,
+    strong: /(smooth|established routine|momentum|clear expectation)/i,
+    missing: 'no evidence about routines, transitions or pacing was captured',
+    strongNote: 'established routines keep transitions tight and momentum intact',
+    presentNote: 'classroom routines are functioning',
+  },
+  D2_2: {
+    probe: /(respect|praise|encourag|rapport|tone|relationship|safe|welcom|celebrat)/i,
+    strong: /(praise|celebrat|growth mindset|high trust|warm)/i,
+    missing: 'no evidence about classroom climate or rapport was captured',
+    strongNote: 'a warm, high-trust climate encourages intellectual risk-taking',
+    presentNote: 'a supportive classroom climate is evidenced',
+  },
+  D2_3: {
+    probe: /(engag|on task|attentive|focus|hands-on|participat|interest|distract|off task)/i,
+    strong: /(highly engaged|on task throughout|all students|sustained)/i,
+    missing: 'no evidence about student engagement was captured',
+    strongNote: 'engagement is sustained across learner groups',
+    presentNote: 'students are engaged with the set tasks',
+  },
+  D4_2: {
+    probe: /(check for understanding|formative|quiz|exit ticket|whiteboard|thumbs|monitor|circulat|assess)/i,
+    strong: /(formative|exit ticket|check for understanding|circulat|monitor)/i,
+    missing: 'no assessment or checking-for-understanding activity was captured',
+    strongNote: 'checks for understanding run through the lesson and inform pacing',
+    presentNote: 'some checking of student understanding is evidenced',
+  },
+  D4_3: {
+    probe: /(misconception|error|mistake|correct|feedback|clarif|redirect|confus)/i,
+    strong: /(misconception|corrected|remediat|targeted feedback)/i,
+    missing: 'no evidence of feedback or misconception handling was captured',
+    strongNote: 'misconceptions are surfaced and addressed with actionable feedback',
+    presentNote: 'feedback is given during tasks',
+  },
+};
+
+function ruleFor(id: string): IndicatorRule {
+  // Early Years items mirror their mainstream equivalents (EYD1.1 -> D1.1).
+  const normalised = id.replace(/^EYD/, 'D').replace('.', '_');
+  return INDICATOR_RULES[normalised] || GENERIC_RULE;
+}
+
 function executeRuleBasedAutoGrade(
   record: TeacherAppraisalRecord,
   items: ReturnType<typeof getItemsForLevel>,
   activities: LessonActivity[]
 ): AutoGradeResult {
-  // Aggregate all textual signals
-  const allText = [
-    record.lessonTopic || '',
-    record.learningObjectives || '',
-    record.generalObserverNotes || '',
-    record.audioTranscription || '',
-    ...activities.map((a) => `${a.name} ${a.modality} ${a.teacherNotes} ${a.studentEvidenceNotes}`),
-  ].join(' ').toLowerCase();
+  const index = buildEvidenceIndex(record, activities);
 
-  const activityNames = activities.map((a) => a.name.toLowerCase()).join(' ');
-  const teacherNotes = activities.map((a) => a.teacherNotes.toLowerCase()).join(' ') + ' ' + (record.generalObserverNotes || '').toLowerCase();
-  const studentEvidence = activities.map((a) => a.studentEvidenceNotes.toLowerCase()).join(' ') + ' ' + (record.audioTranscription || '').toLowerCase();
-  const objectives = (record.learningObjectives || '').toLowerCase();
-
-  // Signal detection checks
-  const hasObjectives = objectives.length > 10;
-  const hasMeasurableVerbs = /(swbat|analyze|evaluate|create|calculate|explain|differentiate|demonstrate|verify|synthesize|justify|solve|construct)/i.test(objectives);
-  const hasSuccessCriteria = /(success criteria|rubric|checklist|accurate|evidence|measure|level)/i.test(objectives) || objectives.includes('criteria');
-  
-  const hasStructuredPhases = activities.length >= 3 || /(hook|warm-up|introduction|modeling|guided|independent|plenary|exit ticket|closure)/i.test(activityNames + ' ' + allText);
-  const hasGroupWork = activities.some((a) => a.modality?.includes('Group') || a.modality?.includes('Pair')) || /(group|pair|peer|collaborat|team|stations)/i.test(allText);
-  const hasDifferentiation = /(differentiated|tier|scaffold|extension|modified|support|remediation|advanced)/i.test(allText);
-  const hasActiveEngagement = /(hands-on|experiment|investigat|project|simulation|interactive|all students|whiteboard|digital)/i.test(allText);
-  const hasHOTSQuestions = /(why|how|analyze|compare|contrast|justify|what if|hypothesize|evaluate|critique|bloom)/i.test(teacherNotes);
-  const hasWaitTimeOrProbing = /(wait time|probing|follow-up|elaborate|clarify|unpack|scaffold)/i.test(teacherNotes);
-  const hasFormativeAssessment = /(quiz|formative|exit ticket|check for understanding|thumbs|whiteboard|pollen|mini-whiteboard|rubric)/i.test(allText);
-  const hasMisconceptionsAddressed = /(misconception|error|clarified|corrected|redirected|feedback|addressed confusion)/i.test(allText);
-  const hasCALPorVocab = /(calp|vocabulary|academic language|terminology|keywords|glossary|syntax)/i.test(allText);
-  const hasPositiveCulture = /(respect|praise|enthusiasm|safe|encourag|growth mindset|celebrat)/i.test(allText);
-  const hasClassroomRoutines = /(routine|transition|on task|pacing|timekeeper|clear expectations|smooth)/i.test(allText);
-  const hasClosureOrPlenary = /(plenary|closure|exit ticket|summary|reflection|recap|self-assessment)/i.test(activityNames + ' ' + allText);
-
-  const scoredList: Array<{
-    indicatorCode: string;
-    score: 1 | 2 | 3 | 4;
-    rationale: string;
-    domainId: string;
-    title: string;
-  }> = [];
+  const scoredList: AutoGradeResult['scores'] = [];
 
   items.forEach((item) => {
-    let score: 1 | 2 | 3 | 4 = 3; // Proficient default baseline
-    let rationale = '';
+    const rule = ruleFor(item.id);
+    const hits = matchEvidence(index, rule.probe);
 
-    const id = item.id;
-
-    // Domain 1: Planning
-    if (id === 'D1.1' || id === 'EYD1.1') {
-      if (activities.length >= 4 && hasStructuredPhases) {
-        score = 4;
-        rationale = `Detailed lesson activities schedule with ${activities.length} explicit phases and designated time ranges demonstrates distinguished structural design.`;
-      } else if (hasStructuredPhases || activities.length >= 2) {
-        score = 3;
-        rationale = 'Logical lesson sequence observed with clear progression from apperception to practice.';
-      } else {
-        score = 2;
-        rationale = 'Basic lesson sequence with minor timing or phase transition ambiguities.';
-      }
-    } else if (id === 'D1.2' || id === 'EYD1.2') {
-      if (hasObjectives && hasMeasurableVerbs && hasSuccessCriteria) {
-        score = 4;
-        rationale = `Observable, student-centered learning objectives stated with explicit measurable success criteria ("${record.learningObjectives?.slice(0, 50)}...").`;
-      } else if (hasObjectives) {
-        score = 3;
-        rationale = 'Clear learning objectives articulated and shared with learners.';
-      } else {
-        score = 2;
-        rationale = 'Learning objectives are broad or focused primarily on activity rather than verified student mastery.';
-      }
-    } else if (id === 'D1.3' || id === 'EYD1.3') {
-      if (activities.length >= 3 && hasStructuredPhases) {
-        score = 4;
-        rationale = 'High alignment between lesson tasks, activities, and stated core learning objectives throughout all phases.';
-      } else {
-        score = 3;
-        rationale = 'Planned learning activities directly support the instructional topic and standard curriculum expectations.';
-      }
-    } else if (id === 'D1.4') {
-      if (hasDifferentiation) {
-        score = 4;
-        rationale = 'Explicit evidence of differentiated support, tiered task variations, and targeted scaffolding for diverse learner tiers.';
-      } else if (hasGroupWork) {
-        score = 3;
-        rationale = 'Varied modalities utilized; student support provided during guided practice.';
-      } else {
-        score = 2;
-        rationale = 'Standard whole-class progression observed; further differentiated extensions recommended.';
-      }
-    } else if (id === 'D1.5') {
-      if (hasGroupWork && (hasStructuredPhases || activities.length >= 3)) {
-        score = 4;
-        rationale = 'Exemplary balance between whole-class direct modeling, collaborative peer tasks, and individual application.';
-      } else {
-        score = 3;
-        rationale = 'Effective mix of teacher-led explanation and active student working intervals.';
-      }
+    if (!index.length || !hits.length) {
+      scoredList.push({
+        indicatorCode: item.id,
+        score: null,
+        notObservable: true,
+        rationale: `Not observable - ${
+          index.length
+            ? rule.missing
+            : 'no lesson activities, observer notes, transcript or photos have been captured yet'
+        }.`,
+        evidenceRefs: [],
+        domainId: item.domainId,
+        title: item.title,
+      });
+      return;
     }
 
-    // Domain 2: Classroom Management
-    else if (id.startsWith('D2') || id.startsWith('EYD2')) {
-      if (id === 'D2.1' || id === 'EYD2.1') {
-        score = hasClassroomRoutines || hasStructuredPhases ? 4 : 3;
-        rationale = score === 4
-          ? 'Smooth transitions and established classroom operating procedures maintained learning momentum seamlessly.'
-          : 'Pacing and classroom flow were maintained throughout the observation.';
-      } else if (id === 'D2.2' || id === 'EYD2.2') {
-        score = hasPositiveCulture ? 4 : 3;
-        rationale = score === 4
-          ? 'High-trust, respectful rapport with active celebration of effort and intellectual risk-taking.'
-          : 'Supportive and orderly classroom learning atmosphere.';
-      } else if (id === 'D2.3' || id === 'EYD2.3') {
-        score = hasActiveEngagement ? 4 : 3;
-        rationale = score === 4
-          ? 'High on-task engagement sustained across all learner groups through dynamic activities.'
-          : 'Students were consistently attentive and engaged with assigned tasks.';
-      } else {
-        score = 3;
-        rationale = 'Classroom environment effectively supports focused academic investigation and safety.';
-      }
-    }
-
-    // Domain 3: Instructional Process
-    else if (id.startsWith('D3') || id.startsWith('EYD3')) {
-      if (id === 'D3.3' || id === 'EYD3.3') {
-        // Apperception & Hook
-        score = /(hook|prior knowledge|warm-up|apperception|real-world|phenomenon)/i.test(allText) ? 4 : 3;
-        rationale = score === 4
-          ? 'Compelling hook connecting new conceptual material to prior learner schemas and authentic real-world contexts.'
-          : 'Opening effectively activated relevant prerequisite knowledge.';
-      } else if (id === 'D3.5') {
-        // Higher Order Thinking
-        score = hasHOTSQuestions ? 4 : (hasStructuredPhases ? 3 : 2);
-        rationale = score === 4
-          ? 'Systematic higher-order questioning requiring students to analyze, compare, evaluate, and justify their reasoning.'
-          : 'Effective questioning combining foundational checks and conceptual explanations.';
-      } else if (id === 'D3.10') {
-        // All student participation
-        score = hasGroupWork || hasActiveEngagement ? 4 : 3;
-        rationale = score === 4
-          ? 'Equitable participation protocols (cold calling, peer pair-share, mini-whiteboards) engaged 100% of learners.'
-          : 'Broad student participation observed during questioning and classroom discussions.';
-      } else if (id === 'D3.11') {
-        // Wait time & probing
-        score = hasWaitTimeOrProbing ? 4 : 3;
-        rationale = score === 4
-          ? 'Generous wait time and targeted follow-up probing guided students to elaborate and refine their own thinking.'
-          : 'Appropriate response pacing and clarification provided when student questions arose.';
-      } else if (id === 'D3.18') {
-        // CALP & Academic Vocabulary
-        score = hasCALPorVocab ? 4 : 3;
-        rationale = score === 4
-          ? 'Explicit instruction and reinforcement of subject-specific academic register (CALP) with precise student usage.'
-          : 'Subject-specific terminology introduced and reinforced in context.';
-      } else if (id === 'D3.19') {
-        // Lesson closure / Plenary
-        score = hasClosureOrPlenary ? 4 : 3;
-        rationale = score === 4
-          ? 'Dedicated plenary summarizing key understandings and consolidating core learning objectives with student voice.'
-          : 'Lesson concluded with summary of key concepts covered.';
-      } else {
-        score = (hasHOTSQuestions && hasActiveEngagement) ? 4 : 3;
-        rationale = 'Instructional delivery meets rigorous Eduversal Framework 2 quality benchmarks.';
-      }
-    }
-
-    // Domain 4: Assessment
-    else if (id.startsWith('D4') || id.startsWith('EYD4')) {
-      if (id === 'D4.2' || id === 'EYD4.2') {
-        score = hasFormativeAssessment ? 4 : 3;
-        rationale = score === 4
-          ? 'Continuous formative checks for understanding deployed throughout the lesson to adjust real-time pacing.'
-          : 'Formative questioning used to gauge student comprehension during practice.';
-      } else if (id === 'D4.3' || id === 'EYD4.3') {
-        score = hasMisconceptionsAddressed ? 4 : 3;
-        rationale = score === 4
-          ? 'Swift identification and pedagogical remediation of student misconceptions with actionable feedback.'
-          : 'Feedback provided to students during guided and independent tasks.';
-      } else {
-        score = hasFormativeAssessment ? 4 : 3;
-        rationale = 'Monitoring and assessment alignment adheres to Eduversal quality standards.';
-      }
-    }
-
-    // Framework 1 / 3 / 4 / Leadership
-    else {
-      score = 3;
-      rationale = 'Meets expected professional benchmark standards for the career stage.';
-    }
+    const strongHits = rule.strong ? matchEvidence(index, rule.strong) : [];
+    const score: 1 | 2 | 3 | 4 = strongHits.length >= 2 ? 4 : strongHits.length === 1 ? 3 : 2;
+    const cited = strongHits.length ? strongHits : hits;
 
     scoredList.push({
       indicatorCode: item.id,
       score,
-      rationale,
+      notObservable: false,
+      rationale: `${score >= 3 ? rule.strongNote : rule.presentNote}. Evidence - ${citation(cited)}`,
+      evidenceRefs: cited.map((h) => `${h.ref}: "${h.text.trim().replace(/\s+/g, ' ').slice(0, 90)}"`),
       domainId: item.domainId,
       title: item.title,
     });
   });
 
-  // Calculate totals and Glow / Grow / Go feedback
-  const glow = [
-    `Strong instructional structure with ${activities.length > 0 ? `${activities.length} distinct lesson phases` : 'coherent lesson progression'} supporting clear learning objectives.`,
-    hasHOTSQuestions
-      ? 'Effective cognitive activation through targeted probing questions that encouraged analytical student thinking.'
-      : 'Active student engagement maintained with positive classroom rapport and supportive management.',
-    hasFormativeAssessment
-      ? 'Continuous formative checks and timely teacher feedback ensured high student task fidelity.'
-      : 'Clear communication of expectations and smooth transitions throughout observed activities.',
-  ];
+  const observed = scoredList.filter((s) => typeof s.score === 'number');
+  const notObservable = scoredList.length - observed.length;
 
-  const grow = [
-    'How might you increase student-to-student talk time and structured peer evaluation during guided practice phases?',
-    'What additional tiered extension tasks could be pre-planned to stretch early finishers into higher-order synthesis?',
-    'How can plenary exit tickets be utilized for individualized next-lesson starter grouping?',
-  ];
+  const glow = observed
+    .filter((s) => (s.score || 0) >= 3)
+    .slice(0, 3)
+    .map((s) => `${s.title}: ${s.rationale}`);
+
+  const grow = notObservable
+    ? [
+        `${notObservable} of ${scoredList.length} indicators could not be rated from the evidence captured - which of these would you want an observer to look for next time?`,
+        'How might the lesson record capture student work directly, so assessment indicators can be evidenced rather than inferred?',
+      ]
+    : [
+        'How might you increase student-to-student talk during guided practice?',
+        'What extension tasks could stretch early finishers into higher-order synthesis?',
+      ];
 
   const go = [
-    'Incorporate a 3-minute structured Think-Pair-Share routine into the core modeling segment of upcoming unit plans.',
-    'Embed observable success criteria check-boxes directly onto student task sheets for self-assessment.',
-    'Document differentiated scaffolding tiers (Core, Scaffolded, Extension) in the weekly lesson planning template.',
+    notObservable
+      ? 'Capture photo evidence of student work and the board during the next observation so assessment and planning indicators can be evidenced.'
+      : 'Embed observable success criteria on student task sheets for self-assessment.',
+    'Record the lesson phases with time ranges so pacing can be evidenced rather than recalled.',
   ];
 
-  const summaryEvaluation = `The observed lesson demonstrated ${
-    scoredList.filter((s) => s.score === 4).length > 6 ? 'distinguished' : 'solid proficient'
-  } pedagogical execution under Eduversal Framework 2.0 standards. Instruction was characterized by clear objectives, purposeful task sequencing across ${
-    activities.length || 'structured'
-  } activities, active student participation, and consistent classroom management.`;
+  const summaryEvaluation = observed.length
+    ? `Rated ${observed.length} of ${scoredList.length} Framework 2 indicators from the evidence captured (${index.length} evidence items across activities, notes, transcript and photos). ${
+        notObservable
+          ? `${notObservable} indicators are marked not observable - they were not evidenced by the recording, notes or photos and have been left unscored rather than assumed.`
+          : 'All indicators were evidenced.'
+      }`
+    : 'No indicator could be rated. Capture lesson activities, observer notes, an audio recording or photo evidence, then run auto-grading again.';
 
-  return calculateAutoGradeSummary(record.careerLevel, scoredList, { glow, grow, go, summaryEvaluation }, activities.length);
+  return calculateAutoGradeSummary(
+    record.careerLevel,
+    scoredList,
+    { glow, grow, go, summaryEvaluation },
+    activities.length
+  );
 }
 
 /**
- * Calculates raw scores, percentages, and indicative grades
+ * Totals only the indicators that could actually be rated.
+ *
+ * The percentage is attainment across observed indicators, not across the full
+ * rubric - otherwise every unobserved indicator would silently read as a zero
+ * and drag a fair lesson into a failing grade.
  */
 function calculateAutoGradeSummary(
   careerLevel: CareerLevel,
-  scores: Array<{ indicatorCode: string; score: 1 | 2 | 3 | 4; rationale: string; domainId?: string; title?: string }>,
+  scores: AutoGradeResult['scores'],
   extraData: any,
   activitiesCount: number
 ): AutoGradeResult {
-  const config = LEVEL_SCORING_CONFIGS[careerLevel];
   const items = getItemsForLevel(careerLevel);
-  const maxScore = items.length * 4;
 
   let totalRaw = 0;
+  let observedCount = 0;
+
   const enrichedScores = scores.map((s) => {
     const item = items.find((it) => it.id === s.indicatorCode);
-    totalRaw += s.score;
+    if (typeof s.score === 'number') {
+      totalRaw += s.score;
+      observedCount++;
+    }
     return {
       indicatorCode: s.indicatorCode,
       score: s.score,
       rationale: s.rationale,
+      evidenceRefs: s.evidenceRefs || [],
+      notObservable: s.notObservable ?? s.score === null,
       domainId: item?.domainId || s.domainId || 'Framework Indicator',
       title: item?.title || s.title || `Indicator ${s.indicatorCode}`,
     };
   });
 
+  const maxScore = observedCount * 4;
   const percentage = maxScore > 0 ? Math.round((totalRaw / maxScore) * 100) : 0;
 
-  // Grade calculation
   let grade: 'A' | 'B' | 'C' | 'D' | 'F' = 'F';
-  if (totalRaw >= config.scaleA[0]) grade = 'A';
-  else if (totalRaw >= config.scaleB[0]) grade = 'B';
-  else if (totalRaw >= config.scaleC[0]) grade = 'C';
-  else if (totalRaw >= config.scaleD[0]) grade = 'D';
-  else grade = 'F';
+  if (observedCount === 0) grade = 'F';
+  else if (percentage >= 86) grade = 'A';
+  else if (percentage >= 66) grade = 'B';
+  else if (percentage >= 51) grade = 'C';
+  else if (percentage >= 36) grade = 'D';
 
   return {
     scores: enrichedScores,
@@ -340,10 +409,14 @@ function calculateAutoGradeSummary(
     maxScore,
     percentage,
     grade,
+    observedCount,
+    notObservableCount: enrichedScores.length - observedCount,
+    totalIndicatorCount: enrichedScores.length,
     glow: extraData.glow || [],
     grow: extraData.grow || [],
     go: extraData.go || [],
-    summaryEvaluation: extraData.summaryEvaluation || extraData.summary || 'Appraisal evaluation generated successfully.',
+    summaryEvaluation:
+      extraData.summaryEvaluation || extraData.summary || 'Appraisal evaluation generated.',
     activitiesEvaluatedCount: activitiesCount,
   };
 }
