@@ -279,3 +279,111 @@ export interface DepartmentSummary {
   strongestIndicators: string[];
   growthIndicators: string[];
 }
+
+/* ------------------------------------------------------------------ *
+ * Walkthrough (Educamp)
+ *
+ * A short formative visit. Deliberately kept apart from Framework 2:
+ * walkthroughs carry no score and are never folded into annual appraisal
+ * calculations - findings go straight back to the teacher as developmental
+ * feedback.
+ * ------------------------------------------------------------------ */
+
+export type WalkthroughResponse = 'E' | 'D' | 'N';
+
+export const WALKTHROUGH_RESPONSE_LABELS: Record<WalkthroughResponse, string> = {
+  E: 'Evident (clearly observed)',
+  D: 'Developing (partially observed / inconsistent)',
+  N: 'Not Observed (may be due to lesson phase, not absence of practice)',
+};
+
+export const OBSERVER_ROLES = [
+  'Subject Specialist',
+  'Subject Leader',
+  'School Principal',
+  'Academic Coordinator',
+  'Cambridge Coordinator',
+] as const;
+
+export const LESSON_PHASES = [
+  'Opening/Introduction',
+  'Main Activity',
+  'Guided Practice',
+  'Independent Work',
+  'Group Work',
+  'Closure/Review',
+  'Transition',
+] as const;
+
+export interface WalkthroughIndicator {
+  id: string;
+  title: string;
+  question: string;
+  notesPrompt: string;
+}
+
+export const WALKTHROUGH_INDICATORS: WalkthroughIndicator[] = [
+  {
+    id: 'W1',
+    title: 'Learning Intentions',
+    question: 'Are students aware of what they are learning and why?',
+    notesPrompt:
+      'How were learning intentions communicated? Any success criteria or purpose statements visible or spoken?',
+  },
+  {
+    id: 'W2',
+    title: 'Student Engagement',
+    question: 'Are students actively engaged in the learning activity?',
+    notesPrompt:
+      'What were students doing? Estimate proportion on-task. Passive, active, or collaborative?',
+  },
+  {
+    id: 'W3',
+    title: 'Classroom Climate',
+    question: 'Is the environment orderly, respectful, and conducive to learning?',
+    notesPrompt:
+      'Classroom atmosphere, teacher-student interaction quality, indicators of climate.',
+  },
+  {
+    id: 'W4',
+    title: 'Instructional Strategy',
+    question: 'Is the teaching approach appropriate for the stated objective?',
+    notesPrompt: 'Teaching strategy observed - aligned to objective and appropriate for learners?',
+  },
+  {
+    id: 'W5',
+    title: 'Formative Monitoring',
+    question: 'Is the teacher checking understanding and adjusting accordingly?',
+    notesPrompt: 'How did the teacher monitor understanding? Any visible in-lesson adjustments?',
+  },
+];
+
+export interface WalkthroughEntry {
+  response: WalkthroughResponse | null;
+  notes: string;
+}
+
+export interface WalkthroughRecord {
+  id: string;
+  teacherName: string;
+  subject: string;
+  classObserved: string;
+  dateOfVisit: string;
+  timeOfVisit: string;
+  durationMinutes?: number;
+  observerName: string;
+  observerRole: string;
+  lessonPhase: string;
+
+  // Not on the paper form, but needed to scope reports the same way the rest
+  // of the platform does.
+  schoolName: string;
+  academicYear: string;
+
+  responses: Record<string, WalkthroughEntry>;
+  keyObservation: string;
+  suggestedFocus: string;
+
+  createdAt: string;
+  updatedAt: string;
+}
