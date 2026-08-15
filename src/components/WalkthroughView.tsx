@@ -3,6 +3,7 @@ import {
   ClipboardCheck,
   Plus,
   Trash2,
+  Pencil,
   Save,
   Download,
   FileType2,
@@ -89,6 +90,12 @@ export const WalkthroughView: React.FC = () => {
 
   const report = useMemo(() => buildWalkthroughReport(records, filters), [records, filters]);
 
+  // The draft is an edit rather than a new visit when its id already exists.
+  const isEditing = useMemo(
+    () => records.some((r) => r.id === draft.id),
+    [records, draft.id]
+  );
+
   const subjects = useMemo(
     () => Array.from(new Set(records.map((r) => r.subject).filter(Boolean))).sort(),
     [records]
@@ -139,12 +146,15 @@ export const WalkthroughView: React.FC = () => {
     }
 
     try {
+      const wasEditing = isEditing;
       saveOrUpdateWalkthrough(draft);
       setRecords(loadWalkthroughs());
       setDraft(createBlankWalkthrough());
       setError(null);
       setSaved(true);
       setTimeout(() => setSaved(false), 3500);
+      // After updating an existing visit, return to the list so the change is visible.
+      if (wasEditing) setPanel('records');
     } catch (e: any) {
       setError(e?.message || 'The walkthrough could not be saved.');
     }
@@ -195,7 +205,7 @@ export const WalkthroughView: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
-            {panelBtn('form', 'New Visit')}
+            {panelBtn('form', isEditing ? 'Edit Visit' : 'New Visit')}
             {panelBtn('records', `Records (${records.length})`)}
             {panelBtn('report', 'Graphs & Report')}
           </div>
@@ -213,6 +223,24 @@ export const WalkthroughView: React.FC = () => {
       {/* ---------------- Form ---------------- */}
       {panel === 'form' && (
         <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm space-y-5">
+          {isEditing && (
+            <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-xl bg-indigo-50 border border-indigo-200">
+              <p className="text-xs text-indigo-900">
+                <strong>Editing an existing walkthrough</strong> — {draft.teacherName || 'this visit'}
+                , {draft.dateOfVisit}. Saving updates that record rather than creating a new one.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setDraft(createBlankWalkthrough());
+                  setError(null);
+                }}
+                className="text-xs font-semibold text-indigo-700 hover:text-indigo-900 underline cursor-pointer"
+              >
+                Cancel edit
+              </button>
+            </div>
+          )}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
             <div>
               <label className="block text-slate-600 font-medium mb-1">Teacher Name *</label>
@@ -443,7 +471,9 @@ export const WalkthroughView: React.FC = () => {
               </span>
             ) : (
               <span className="text-[11px] text-slate-500">
-                Teacher name and Key Observation are required.
+                {isEditing
+                  ? 'Updating an existing record. Teacher name and Key Observation are required.'
+                  : 'Teacher name and Key Observation are required.'}
               </span>
             )}
 
@@ -457,7 +487,7 @@ export const WalkthroughView: React.FC = () => {
                 className="flex items-center gap-1.5 px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-xl border border-slate-200 transition cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
-                Clear Form
+                {isEditing ? 'Discard Changes' : 'Clear Form'}
               </button>
               <button
                 type="button"
@@ -465,7 +495,7 @@ export const WalkthroughView: React.FC = () => {
                 className="flex items-center gap-2 px-5 py-2 bg-[#165963] hover:bg-[#11474f] text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-sm"
               >
                 <Save className="w-4 h-4" />
-                Save Walkthrough
+                {isEditing ? 'Update Walkthrough' : 'Save Walkthrough'}
               </button>
             </div>
           </div>
@@ -520,6 +550,16 @@ export const WalkthroughView: React.FC = () => {
                         </span>
                       );
                     })}
+                    <button
+                      type="button"
+                      onClick={() => handleEdit(r)}
+                      aria-label="Edit walkthrough"
+                      title="Edit this walkthrough"
+                      className="flex items-center gap-1 px-2 h-7 rounded-lg text-slate-600 hover:text-indigo-700 hover:bg-indigo-50 border border-slate-200 text-[11px] font-semibold transition cursor-pointer"
+                    >
+                      <Pencil className="w-3 h-3" />
+                      Edit
+                    </button>
                     <button
                       type="button"
                       onClick={() => handleDelete(r.id)}
