@@ -1,6 +1,6 @@
 import { TeacherAppraisalRecord, CareerLevel, SchoolLevel, SubjectCategory } from '../types';
 import { SAMPLE_APPRAISALS } from '../data/sampleAppraisals';
-import { calculateF2Scores, calculateCompositeScore, getItemsForLevel } from '../data/frameworkRubrics';
+import { calculateF2Scores, calculateF2Predicate, getItemsForLevel } from '../data/frameworkRubrics';
 
 const STORAGE_KEY = 'eduversal_appraisals_v4_clean';
 
@@ -42,17 +42,7 @@ export function saveOrUpdateAppraisal(record: TeacherAppraisalRecord): TeacherAp
   record.f2Percentage = stats.percentage;
   record.indicativeGrade = stats.grade;
 
-  const comp = calculateCompositeScore(
-    record.careerLevel,
-    stats.totalRaw,
-    stats.maxTotal,
-    record.f1ScorePercent || 85,
-    record.f3ScorePercent || 85,
-    record.f4ScorePercent || (record.careerLevel === 'EarlyYears' ? 0 : 80)
-  );
-
-  record.compositeScore = comp.composite;
-  record.finalPredicate = comp.predicate;
+  record.finalPredicate = calculateF2Predicate(stats.percentage).predicate;
   record.updatedAt = new Date().toISOString();
 
   const all = loadAppraisals();
@@ -122,9 +112,6 @@ export function createBlankAppraisal(
     contactedBeforeVisit: 'Yes',
     preVisitContactDate: now.toISOString().substring(0, 10),
     status: 'Draft',
-    f1ScorePercent: 85,
-    f3ScorePercent: 85,
-    f4ScorePercent: careerLevel === 'EarlyYears' ? 0 : 80,
     scores: initialScores,
     feedback: {
       glow: [],

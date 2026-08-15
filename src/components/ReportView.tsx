@@ -21,7 +21,7 @@ import { EduversalLogo } from './EduversalLogo';
 import {
   getItemsForLevel,
   calculateF2Scores,
-  calculateCompositeScore,
+  calculateF2Predicate,
   LEVEL_SCORING_CONFIGS,
 } from '../data/frameworkRubrics';
 
@@ -37,14 +37,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
   const items = getItemsForLevel(record.careerLevel);
   const config = LEVEL_SCORING_CONFIGS[record.careerLevel];
   const stats = calculateF2Scores(record.careerLevel, record.scores);
-  const comp = calculateCompositeScore(
-    record.careerLevel,
-    stats.totalRaw,
-    stats.maxTotal,
-    record.f1ScorePercent || 85,
-    record.f3ScorePercent || 85,
-    record.f4ScorePercent || (record.careerLevel === 'EarlyYears' ? 0 : 80)
-  );
+  const comp = calculateF2Predicate(stats.percentage);
 
   // Group items by Domain
   const domainGroups: Record<string, typeof items> = {};
@@ -286,39 +279,37 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
           </div>
         </div>
 
-        {/* Weighted Composite Appraisal Breakdown */}
+        {/* Framework 2 Observation Result */}
         <div className="mb-6 p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs">
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
             <h3 className="font-bold text-slate-900 uppercase tracking-wider text-xs flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-sky-700" />
-              Annual Weighted Composite Simulation (Edunav Formula)
+              Framework 2 Classroom Observation Result
             </h3>
             <span className="text-slate-500 text-[11px]">
-              Final Predicate: <strong className="text-sky-800">{comp.predicate} ({comp.composite}%)</strong>
+              Performance Band: <strong className="text-sky-800">{comp.predicate} ({comp.f2Percent}%)</strong>
             </span>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
-            <div className="p-2 bg-white rounded-lg border border-slate-200">
-              <div className="text-[10px] text-slate-500">F1 Teacher Admin (20%)</div>
-              <div className="font-bold font-mono text-slate-800 text-sm mt-0.5">{comp.f1Percent}%</div>
-            </div>
             <div className="p-2 bg-sky-50 rounded-lg border border-sky-200">
-              <div className="text-[10px] text-sky-800 font-semibold">
-                F2 Observation ({record.careerLevel === 'EarlyYears' ? '60%' : '50%'})
-              </div>
+              <div className="text-[10px] text-sky-800 font-semibold">F2 Observed Score</div>
               <div className="font-bold font-mono text-sky-900 text-sm mt-0.5">{comp.f2Percent}%</div>
             </div>
             <div className="p-2 bg-white rounded-lg border border-slate-200">
-              <div className="text-[10px] text-slate-500">F3 Work Inspection (20%)</div>
-              <div className="font-bold font-mono text-slate-800 text-sm mt-0.5">{comp.f3Percent}%</div>
+              <div className="text-[10px] text-slate-500">Raw Points</div>
+              <div className="font-bold font-mono text-slate-800 text-sm mt-0.5">
+                {stats.totalRaw} / {stats.maxTotal}
+              </div>
             </div>
             <div className="p-2 bg-white rounded-lg border border-slate-200">
-              <div className="text-[10px] text-slate-500">
-                {record.careerLevel === 'EarlyYears' ? 'F4 Survey (N/A)' : 'F4 Student Survey (10%)'}
-              </div>
+              <div className="text-[10px] text-slate-500">Indicative Grade</div>
+              <div className="font-bold font-mono text-slate-800 text-sm mt-0.5">{stats.grade}</div>
+            </div>
+            <div className="p-2 bg-white rounded-lg border border-slate-200">
+              <div className="text-[10px] text-slate-500">Indicators Scored</div>
               <div className="font-bold font-mono text-slate-800 text-sm mt-0.5">
-                {comp.f4Percent !== null ? `${comp.f4Percent}%` : 'N/A'}
+                {stats.itemsScored} / {stats.totalItems}
               </div>
             </div>
           </div>

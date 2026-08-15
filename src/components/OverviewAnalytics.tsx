@@ -36,7 +36,7 @@ import {
   ReferenceLine,
 } from 'recharts';
 import { TeacherAppraisalRecord, SchoolLevel, SubjectCategory, CareerLevel, EDUVERSAL_SCHOOLS } from '../types';
-import { calculateF2Scores, calculateCompositeScore } from '../data/frameworkRubrics';
+import { calculateF2Scores, calculateF2Predicate } from '../data/frameworkRubrics';
 
 interface OverviewAnalyticsProps {
   appraisals: TeacherAppraisalRecord[];
@@ -83,10 +83,6 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
   const {
     gradeDistribution,
     avgF2Pct,
-    avgCompositePct,
-    avgF1Pct,
-    avgF3Pct,
-    avgF4Pct,
     campusStats,
     careerStats,
     categoryStats,
@@ -96,16 +92,11 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
   } = useMemo(() => {
     const grades: Record<string, number> = { A: 0, B: 0, C: 0, D: 0, F: 0 };
     let f2Sum = 0;
-    let compSum = 0;
-    let f1Sum = 0;
-    let f3Sum = 0;
-    let f4Sum = 0;
-    let f4ValidCount = 0;
 
-    const sLevelMap: Record<string, { count: number; f2Sum: number; compSum: number; aCount: number; bCount: number }> = {};
-    const catMap: Record<string, { count: number; f2Sum: number; compSum: number; aCount: number }> = {};
-    const campusMap: Record<string, { count: number; f2Sum: number; compSum: number; aCount: number }> = {};
-    const careerMap: Record<string, { count: number; f2Sum: number; compSum: number }> = {};
+    const sLevelMap: Record<string, { count: number; f2Sum: number; aCount: number; bCount: number }> = {};
+    const catMap: Record<string, { count: number; f2Sum: number; aCount: number }> = {};
+    const campusMap: Record<string, { count: number; f2Sum: number; aCount: number }> = {};
+    const careerMap: Record<string, { count: number; f2Sum: number }> = {};
 
     // Domain score accumulators
     const d1Scores: number[] = [];
@@ -120,7 +111,6 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
       subject: string;
       level: CareerLevel;
       f2Pct: number;
-      compPct: number;
       grade: string;
       predicate: string;
       appraisal: TeacherAppraisalRecord;
@@ -128,61 +118,43 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
 
     filteredAppraisals.forEach((a) => {
       const f2Stats = calculateF2Scores(a.careerLevel, a.scores);
-      const comp = calculateCompositeScore(
-        a.careerLevel,
-        f2Stats.totalRaw,
-        f2Stats.maxTotal,
-        a.f1ScorePercent || 85,
-        a.f3ScorePercent || 85,
-        a.f4ScorePercent || (a.careerLevel === 'EarlyYears' ? 0 : 80)
-      );
+      const band = calculateF2Predicate(f2Stats.percentage);
 
       grades[f2Stats.grade] = (grades[f2Stats.grade] || 0) + 1;
       f2Sum += f2Stats.percentage;
-      compSum += comp.composite;
-      f1Sum += a.f1ScorePercent || 85;
-      f3Sum += a.f3ScorePercent || 85;
-      if (a.careerLevel !== 'EarlyYears' && a.f4ScorePercent !== undefined) {
-        f4Sum += a.f4ScorePercent;
-        f4ValidCount++;
-      }
 
       // School level
       if (!sLevelMap[a.schoolLevel]) {
-        sLevelMap[a.schoolLevel] = { count: 0, f2Sum: 0, compSum: 0, aCount: 0, bCount: 0 };
+        sLevelMap[a.schoolLevel] = { count: 0, f2Sum: 0, aCount: 0, bCount: 0 };
       }
       sLevelMap[a.schoolLevel].count++;
       sLevelMap[a.schoolLevel].f2Sum += f2Stats.percentage;
-      sLevelMap[a.schoolLevel].compSum += comp.composite;
       if (f2Stats.grade === 'A') sLevelMap[a.schoolLevel].aCount++;
       if (f2Stats.grade === 'B') sLevelMap[a.schoolLevel].bCount++;
 
       // Category
       if (!catMap[a.subjectCategory]) {
-        catMap[a.subjectCategory] = { count: 0, f2Sum: 0, compSum: 0, aCount: 0 };
+        catMap[a.subjectCategory] = { count: 0, f2Sum: 0, aCount: 0 };
       }
       catMap[a.subjectCategory].count++;
       catMap[a.subjectCategory].f2Sum += f2Stats.percentage;
-      catMap[a.subjectCategory].compSum += comp.composite;
       if (f2Stats.grade === 'A') catMap[a.subjectCategory].aCount++;
 
       // Campus
       const sName = a.schoolName || 'Other School';
       if (!campusMap[sName]) {
-        campusMap[sName] = { count: 0, f2Sum: 0, compSum: 0, aCount: 0 };
+        campusMap[sName] = { count: 0, f2Sum: 0, aCount: 0 };
       }
       campusMap[sName].count++;
       campusMap[sName].f2Sum += f2Stats.percentage;
-      campusMap[sName].compSum += comp.composite;
       if (f2Stats.grade === 'A') campusMap[sName].aCount++;
 
       // Career level
       if (!careerMap[a.careerLevel]) {
-        careerMap[a.careerLevel] = { count: 0, f2Sum: 0, compSum: 0 };
+        careerMap[a.careerLevel] = { count: 0, f2Sum: 0 };
       }
       careerMap[a.careerLevel].count++;
       careerMap[a.careerLevel].f2Sum += f2Stats.percentage;
-      careerMap[a.careerLevel].compSum += comp.composite;
 
       // Extract domain scores
       Object.entries(a.scores || {}).forEach(([code, val]) => {
@@ -202,19 +174,14 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
         subject: a.subject,
         level: a.careerLevel,
         f2Pct: f2Stats.percentage,
-        compPct: comp.composite,
         grade: f2Stats.grade,
-        predicate: comp.predicate,
+        predicate: band.predicate,
         appraisal: a,
       });
     });
 
     const count = filteredAppraisals.length || 1;
     const avgF2 = Math.round((f2Sum / count) * 10) / 10;
-    const avgComp = Math.round((compSum / count) * 10) / 10;
-    const avgF1 = Math.round((f1Sum / count) * 10) / 10;
-    const avgF3 = Math.round((f3Sum / count) * 10) / 10;
-    const avgF4 = f4ValidCount > 0 ? Math.round((f4Sum / f4ValidCount) * 10) / 10 : 80;
 
     const avgDomain = (arr: number[]) => (arr.length > 0 ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : 85);
 
@@ -230,15 +197,11 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
       return (s.grade === 'A' || s.grade === 'B') && s.percentage >= 75;
     }).length;
 
-    rankings.sort((a, b) => b.compPct - a.compPct);
+    rankings.sort((a, b) => b.f2Pct - a.f2Pct);
 
     return {
       gradeDistribution: grades,
       avgF2Pct: avgF2,
-      avgCompositePct: avgComp,
-      avgF1Pct: avgF1,
-      avgF3Pct: avgF3,
-      avgF4Pct: avgF4,
       schoolLevelStats: sLevelMap,
       categoryStats: catMap,
       campusStats: campusMap,
@@ -260,24 +223,14 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
     ].filter((d) => d.value > 0);
   }, [gradeDistribution]);
 
-  const frameworkComponentsData = useMemo(() => {
-    return [
-      { name: 'F1: Pre-Visit (20%)', component: 'Planning & Documents', score: avgF1Pct, weight: '20%', target: 75 },
-      { name: 'F2: Classroom (50%)', component: 'Live Observation', score: avgF2Pct, weight: '50%', target: 75 },
-      { name: 'F3: Professionalism (20%)', component: 'Ethics & Growth', score: avgF3Pct, weight: '20%', target: 75 },
-      { name: 'F4: Student Voice (10%)', component: 'Feedback Survey', score: avgF4Pct, weight: '10%', target: 75 },
-    ];
-  }, [avgF1Pct, avgF2Pct, avgF3Pct, avgF4Pct]);
-
   const campusBenchmarkData = useMemo(() => {
-    return Object.entries(campusStats).map(([name, stat]: [string, { count: number; f2Sum: number; compSum: number; aCount: number }]) => ({
+    return Object.entries(campusStats).map(([name, stat]: [string, { count: number; f2Sum: number; aCount: number }]) => ({
       name,
       shortName: name.length > 20 ? `${name.substring(0, 18)}...` : name,
       f2Avg: Math.round((stat.f2Sum / stat.count) * 10) / 10,
-      compAvg: Math.round((stat.compSum / stat.count) * 10) / 10,
       count: stat.count,
       aCount: stat.aCount,
-    })).sort((a, b) => b.compAvg - a.compAvg);
+    })).sort((a, b) => b.f2Avg - a.f2Avg);
   }, [campusStats]);
 
   const careerLevelData = useMemo(() => {
@@ -287,17 +240,15 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
       .map((lvl) => ({
         name: lvl === 'EarlyYears' ? 'Early Years' : lvl,
         f2Avg: Math.round((careerStats[lvl].f2Sum / careerStats[lvl].count) * 10) / 10,
-        compAvg: Math.round((careerStats[lvl].compSum / careerStats[lvl].count) * 10) / 10,
         count: careerStats[lvl].count,
       }));
   }, [careerStats]);
 
   const departmentData = useMemo(() => {
-    return Object.entries(categoryStats).map(([dept, stat]: [string, { count: number; f2Sum: number; compSum: number; aCount: number }]) => ({
+    return Object.entries(categoryStats).map(([dept, stat]: [string, { count: number; f2Sum: number; aCount: number }]) => ({
       name: dept,
       shortName: dept.length > 18 ? `${dept.substring(0, 16)}...` : dept,
       f2Avg: Math.round((stat.f2Sum / stat.count) * 10) / 10,
-      compAvg: Math.round((stat.compSum / stat.count) * 10) / 10,
       count: stat.count,
       aCount: stat.aCount,
     })).sort((a, b) => b.f2Avg - a.f2Avg);
@@ -452,20 +403,6 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
           </div>
           <div className="w-12 h-12 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
             <TrendingUp className="w-6 h-6" />
-          </div>
-        </div>
-
-        {/* Avg Composite Score */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex items-center justify-between">
-          <div>
-            <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">
-              Avg Annual Composite
-            </div>
-            <div className="text-2xl font-bold font-mono text-indigo-600 mt-1">{avgCompositePct}%</div>
-            <div className="text-[11px] text-slate-400 mt-0.5">F1 + F2 + F3 + F4 Weighted</div>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
-            <Award className="w-6 h-6" />
           </div>
         </div>
 
@@ -629,42 +566,36 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
               </div>
             </div>
 
-            {/* Right: 4-Framework Weighted Components Bar Chart */}
+            {/* Right: Framework 2 Domain Attainment */}
             <div className="lg:col-span-7 bg-slate-50 border border-slate-200 rounded-2xl p-5 flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                    Four-Framework Weighted Components (F1, F2, F3, F4)
+                    Framework 2 Domain Attainment
                   </h3>
                   <span className="text-[11px] text-slate-500 font-medium">75% Target</span>
                 </div>
                 <p className="text-[11px] text-slate-500 mb-4">
-                  Comparative performance across lesson planning documents (F1), live observation (F2), professional duties (F3), and student surveys (F4).
+                  Observed classroom performance across the four Framework 2 rubric domains.
                 </p>
 
                 <div className="h-64 w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={frameworkComponentsData} margin={{ top: 10, right: 20, left: -10, bottom: 20 }}>
+                    <BarChart data={domainStats} margin={{ top: 10, right: 20, left: -10, bottom: 20 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
                       <XAxis
-                        dataKey="name"
+                        dataKey="shortName"
                         tick={{ fontSize: 11, fill: '#475569' }}
                         interval={0}
-                        angle={-10}
-                        textAnchor="end"
                       />
-                      <YAxis
-                        domain={[50, 100]}
-                        tick={{ fontSize: 11, fill: '#64748b' }}
-                        unit="%"
-                      />
+                      <YAxis domain={[0, 100]} tick={{ fontSize: 11, fill: '#64748b' }} unit="%" />
                       <Tooltip content={<CustomChartTooltip />} />
                       <ReferenceLine y={75} stroke="#f59e0b" strokeDasharray="4 4" label={{ value: '75% Target', fill: '#d97706', fontSize: 10, position: 'top' }} />
                       <Bar dataKey="score" name="Attainment %" radius={[6, 6, 0, 0]}>
-                        {frameworkComponentsData.map((entry, index) => (
+                        {domainStats.map((_entry, index) => (
                           <Cell
                             key={`f-cell-${index}`}
-                            fill={index === 1 ? '#4f46e5' : index === 0 ? '#0d9488' : index === 2 ? '#3b82f6' : '#8b5cf6'}
+                            fill={['#0d9488', '#4f46e5', '#3b82f6', '#8b5cf6'][index % 4]}
                           />
                         ))}
                       </Bar>
@@ -674,9 +605,9 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
               </div>
 
               <div className="mt-2 pt-3 border-t border-slate-200 flex flex-wrap items-center justify-between text-xs text-slate-600 gap-2">
-                <span>Annual Composite Formula: <strong className="text-slate-800">F1(20%) + F2(50%) + F3(20%) + F4(10%)</strong></span>
+                <span>Scoring basis: <strong className="text-slate-800">Framework 2 classroom observation only</strong></span>
                 <span className="text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200">
-                  Network Avg: {avgCompositePct}%
+                  Network Avg F2: {avgF2Pct}%
                 </span>
               </div>
             </div>
@@ -692,7 +623,7 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
                   Eduversal Network Campus Benchmarking
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Comparative analysis of live classroom observation performance (F2) vs weighted composite index across campuses.
+                  Comparative Framework 2 classroom observation performance across campuses.
                 </p>
               </div>
               <span className="text-xs font-semibold text-slate-600 bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
@@ -721,7 +652,6 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
                     />
                     <ReferenceLine y={75} stroke="#f59e0b" strokeDasharray="4 4" label={{ value: 'Target: 75%', fill: '#b45309', fontSize: 10, position: 'insideTopRight' }} />
                     <Bar dataKey="f2Avg" name="F2 Live Observation %" fill="#4f46e5" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="compAvg" name="Annual Composite %" fill="#0d9488" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -736,10 +666,10 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
                     <span className="text-indigo-600 font-bold">#{i + 1}</span>
                   </div>
                   <div className="flex items-baseline justify-between">
-                    <span className="text-lg font-bold font-mono text-slate-900">{c.compAvg}%</span>
+                    <span className="text-lg font-bold font-mono text-slate-900">{c.f2Avg}%</span>
                     <span className="text-[10px] text-emerald-600 font-medium font-mono">{c.count} staff</span>
                   </div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">F2 Score: {c.f2Avg}%</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">Grade A: {c.aCount}</div>
                 </div>
               ))}
             </div>
@@ -867,7 +797,6 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
                     <Tooltip content={<CustomChartTooltip />} />
                     <Legend verticalAlign="top" height={32} />
                     <Bar dataKey="f2Avg" name="F2 Live Observation %" fill="#4f46e5" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="compAvg" name="Annual Composite %" fill="#0d9488" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -924,11 +853,11 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
                   Teacher Performance Curve &amp; Score Correlation
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Line chart plotting individual teacher F2 observation ratings against their final annual composite score.
+                  Line chart plotting individual teacher Framework 2 observation ratings.
                 </p>
               </div>
               <span className="text-xs font-semibold text-indigo-700 bg-indigo-50 px-3 py-1 rounded-full border border-indigo-200">
-                Sorted by Composite Score
+                Sorted by F2 Score
               </span>
             </div>
 
@@ -941,7 +870,6 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
                       teacherName: t.name,
                       shortTeacher: t.name.split(',')[0],
                       f2Score: t.f2Pct,
-                      compositeScore: t.compPct,
                       school: t.school,
                       subject: t.subject,
                     }))}
@@ -969,10 +897,6 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
                                 <span className="text-indigo-600 font-medium">F2 Live Observation:</span>
                                 <span className="font-mono font-bold text-slate-900">{data.f2Score}%</span>
                               </div>
-                              <div className="flex items-center justify-between gap-4 py-0.5">
-                                <span className="text-emerald-600 font-medium">Annual Composite:</span>
-                                <span className="font-mono font-bold text-slate-900">{data.compositeScore}%</span>
-                              </div>
                             </div>
                           );
                         }
@@ -981,15 +905,6 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
                     />
                     <Legend verticalAlign="top" height={36} />
                     <ReferenceLine y={75} stroke="#f59e0b" strokeDasharray="4 4" label={{ value: '75% Target Threshold', fill: '#b45309', fontSize: 10 }} />
-                    <Line
-                      type="monotone"
-                      dataKey="compositeScore"
-                      name="Annual Composite %"
-                      stroke="#0d9488"
-                      strokeWidth={2.5}
-                      dot={{ r: 4, fill: '#0d9488' }}
-                      activeDot={{ r: 7 }}
-                    />
                     <Line
                       type="monotone"
                       dataKey="f2Score"
@@ -1034,21 +949,14 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
                 <th className="py-3 px-4">Observation Date</th>
                 <th className="py-3 px-4">F2 Raw Score</th>
                 <th className="py-3 px-4">Indicative Reading</th>
-                <th className="py-3 px-4">Composite Predicate</th>
+                <th className="py-3 px-4">Performance Band</th>
                 <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredAppraisals.map((a) => {
                 const s = calculateF2Scores(a.careerLevel, a.scores);
-                const comp = calculateCompositeScore(
-                  a.careerLevel,
-                  s.totalRaw,
-                  s.maxTotal,
-                  a.f1ScorePercent || 85,
-                  a.f3ScorePercent || 85,
-                  a.f4ScorePercent || (a.careerLevel === 'EarlyYears' ? 0 : 80)
-                );
+                const band = calculateF2Predicate(s.percentage);
 
                 return (
                   <tr
@@ -1100,8 +1008,8 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
                     </td>
 
                     <td className="py-3 px-4">
-                      <div className="font-medium text-slate-800">{comp.predicate}</div>
-                      <div className="text-[11px] font-mono text-slate-500">{comp.composite}%</div>
+                      <div className="font-medium text-slate-800">{band.predicate}</div>
+                      <div className="text-[11px] font-mono text-slate-500">{band.f2Percent}%</div>
                     </td>
 
                     <td className="py-3 px-4 text-right">

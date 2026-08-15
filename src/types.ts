@@ -172,11 +172,6 @@ export interface TeacherAppraisalRecord {
   // Scores dictionary: key is item ID (e.g. "D1.1", "D2.1", "EYD1.1", "F1.1", etc.)
   scores: Record<string, ItemScoreRecord>;
   
-  // Framework 1, 3, 4 overrides or manual totals if scored
-  f1ScorePercent?: number; // 0 - 100%
-  f3ScorePercent?: number; // 0 - 100%
-  f4ScorePercent?: number; // 0 - 100%
-  
   // Qualitative Feedback
   feedback: GlowGrowGo;
   generalObserverNotes: string;
@@ -193,7 +188,6 @@ export interface TeacherAppraisalRecord {
   f2MaxScore?: number;
   f2Percentage?: number;
   indicativeGrade?: 'A' | 'B' | 'C' | 'D' | 'F';
-  compositeScore?: number;
   finalPredicate?: 'Excellent' | 'Good' | 'Satisfactory' | 'Needs Improvement' | 'Unsatisfactory';
   
   createdAt: string;
@@ -204,7 +198,6 @@ export interface DepartmentSummary {
   subjectCategory: SubjectCategory;
   count: number;
   averageF2Score: number;
-  averageComposite: number;
   predicates: {
     A: number;
     B: number;

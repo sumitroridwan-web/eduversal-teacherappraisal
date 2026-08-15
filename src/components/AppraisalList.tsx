@@ -17,7 +17,7 @@ import {
   School,
 } from 'lucide-react';
 import { TeacherAppraisalRecord, CareerLevel, SchoolLevel, SubjectCategory, EDUVERSAL_SCHOOLS } from '../types';
-import { calculateF2Scores, calculateCompositeScore } from '../data/frameworkRubrics';
+import { calculateF2Scores } from '../data/frameworkRubrics';
 
 interface AppraisalListProps {
   appraisals: TeacherAppraisalRecord[];
@@ -169,14 +169,6 @@ export const AppraisalList: React.FC<AppraisalListProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
         {filteredAppraisals.map((appraisal) => {
           const s = calculateF2Scores(appraisal.careerLevel, appraisal.scores);
-          const comp = calculateCompositeScore(
-            appraisal.careerLevel,
-            s.totalRaw,
-            s.maxTotal,
-            appraisal.f1ScorePercent || 85,
-            appraisal.f3ScorePercent || 85,
-            appraisal.f4ScorePercent || (appraisal.careerLevel === 'EarlyYears' ? 0 : 80)
-          );
 
           return (
             <div

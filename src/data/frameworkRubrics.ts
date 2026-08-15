@@ -1345,41 +1345,24 @@ export function calculateF2Scores(
   };
 }
 
-// Calculate Official Final Composite Score (F1, F2, F3, F4)
-export function calculateCompositeScore(
-  level: CareerLevel,
-  f2RawScore: number,
-  f2MaxScore: number,
-  f1Percent: number = 85,
-  f3Percent: number = 85,
-  f4Percent: number = 80
-) {
-  const f2Percent = (f2RawScore / f2MaxScore) * 100;
-  let composite = 0;
-
-  if (level === 'EarlyYears') {
-    // EY: F1 20% + F2 60% + F3 20% (F4 N/A)
-    composite = f1Percent * 0.2 + f2Percent * 0.6 + f3Percent * 0.2;
-  } else {
-    // P&S: F1 20% + F2 50% + F3 20% + F4 10%
-    composite = f1Percent * 0.2 + f2Percent * 0.5 + f3Percent * 0.2 + f4Percent * 0.1;
-  }
-
-  composite = Math.round(composite * 10) / 10;
-
+// Performance band for a Framework 2 classroom-observation result.
+// F1 (planning documents), F3 (professionalism) and F4 (student voice) are not
+// collected anywhere in this platform, so no weighted annual composite is
+// derived here - the band reflects observed F2 evidence only.
+export function calculateF2Predicate(f2Percent: number) {
   let predicate: 'Excellent' | 'Good' | 'Satisfactory' | 'Needs Improvement' | 'Unsatisfactory';
   let gradeLetter: 'A' | 'B' | 'C' | 'D' | 'F';
 
-  if (composite >= 86) {
+  if (f2Percent >= 86) {
     predicate = 'Excellent';
     gradeLetter = 'A';
-  } else if (composite >= 66) {
+  } else if (f2Percent >= 66) {
     predicate = 'Good';
     gradeLetter = 'B';
-  } else if (composite >= 51) {
+  } else if (f2Percent >= 51) {
     predicate = 'Satisfactory';
     gradeLetter = 'C';
-  } else if (composite >= 36) {
+  } else if (f2Percent >= 36) {
     predicate = 'Needs Improvement';
     gradeLetter = 'D';
   } else {
@@ -1387,13 +1370,5 @@ export function calculateCompositeScore(
     gradeLetter = 'F';
   }
 
-  return {
-    composite,
-    predicate,
-    gradeLetter,
-    f1Percent,
-    f2Percent: Math.round(f2Percent * 10) / 10,
-    f3Percent,
-    f4Percent: level === 'EarlyYears' ? null : f4Percent,
-  };
+  return { predicate, gradeLetter, f2Percent: Math.round(f2Percent * 10) / 10 };
 }
