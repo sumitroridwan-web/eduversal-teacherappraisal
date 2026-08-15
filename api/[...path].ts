@@ -18,7 +18,9 @@ export default async function handler(
 ) {
   let app: any;
   try {
-    app = (await import("../app")).default;
+    // Explicit .js extension: Vercel compiles this function to ESM, where Node
+    // will not resolve an extensionless relative import at runtime.
+    app = (await import("../app.js")).default;
   } catch (error: any) {
     res.statusCode = 500;
     res.setHeader("content-type", "application/json");
