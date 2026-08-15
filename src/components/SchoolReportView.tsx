@@ -4,6 +4,7 @@ import {
   TeacherAppraisalRecord,
   ACADEMIC_YEARS,
   EDUVERSAL_SCHOOLS,
+  APPRAISERS,
   currentAcademicYear,
 } from '../types';
 import { EduversalLogo } from './EduversalLogo';
@@ -62,6 +63,7 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
     schoolLevel: ALL,
     subjectCategory: ALL,
     careerLevel: ALL,
+    appraiser: ALL,
   });
   const [logo, setLogo] = useState<string | null>(null);
 
@@ -140,7 +142,7 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
           <div>
             <label htmlFor="rep-year" className="block text-[11px] font-semibold text-slate-600 mb-1">
               Academic Year
@@ -205,6 +207,23 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
               <option value={ALL}>{t('report.allSubjects')}</option>
               {SUBJECT_CATEGORIES.map((s) => (
                 <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label htmlFor="rep-appraiser" className="block text-[11px] font-semibold text-slate-600 mb-1">
+              Appraiser
+            </label>
+            <select
+              id="rep-appraiser"
+              value={filters.appraiser}
+              onChange={(e) => set({ appraiser: e.target.value })}
+              className={selectClass}
+            >
+              <option value={ALL}>All appraisers</option>
+              {APPRAISERS.map((a) => (
+                <option key={a} value={a}>{a}</option>
               ))}
             </select>
           </div>
@@ -327,7 +346,7 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
                     </div>
                     <p className="text-[11px] text-slate-500 mt-0.5">
                       {o.schoolName} • {o.schoolLevel} • {o.careerLevel} Level • Observed{' '}
-                      {o.observationDate} • AY {o.academicYear}
+                      {o.observationDate} • AY {o.academicYear} • Appraiser: {o.appraiserName}
                     </p>
                     <p className="text-xs text-slate-700 mt-1">
                       Result: {o.rawScore}/{o.maxScore} ({o.predicate}). {o.ratedCount} indicators

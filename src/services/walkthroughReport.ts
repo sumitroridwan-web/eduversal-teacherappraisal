@@ -13,6 +13,7 @@ export interface WalkthroughFilters {
   school: string;
   subject: string;
   observerRole: string;
+  observerName: string;
   lessonPhase: string;
 }
 
@@ -52,6 +53,7 @@ export function filterWalkthroughs(
       (filters.school === ALL || w.schoolName === filters.school) &&
       (filters.subject === ALL || w.subjectCategory === filters.subject) &&
       (filters.observerRole === ALL || w.observerRole === filters.observerRole) &&
+      (filters.observerName === ALL || w.observerName === filters.observerName) &&
       (filters.lessonPhase === ALL || w.lessonPhase === filters.lessonPhase)
   );
 }
@@ -61,7 +63,8 @@ function describeScope(filters: WalkthroughFilters): string {
   if (filters.academicYear !== ALL) parts.push(`Academic Year ${filters.academicYear}`);
   if (filters.school !== ALL) parts.push(filters.school);
   if (filters.subject !== ALL) parts.push(filters.subject);
-  if (filters.observerRole !== ALL) parts.push(`Observed by ${filters.observerRole}`);
+  if (filters.observerName !== ALL) parts.push(`Observed by ${filters.observerName}`);
+  else if (filters.observerRole !== ALL) parts.push(`Observed by ${filters.observerRole}`);
   if (filters.lessonPhase !== ALL) parts.push(`${filters.lessonPhase} phase`);
   return parts.length ? parts.join(' • ') : 'All walkthrough visits';
 }

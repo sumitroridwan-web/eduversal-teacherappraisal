@@ -9,6 +9,7 @@ export interface SchoolReportFilters {
   schoolLevel: string;
   subjectCategory: string;
   careerLevel: string;
+  appraiser: string;
 }
 
 export const ALL = 'All';
@@ -21,6 +22,7 @@ export interface ObservationSummary {
   careerLevel: string;
   observationDate: string;
   academicYear: string;
+  appraiserName: string;
   rawScore: number;
   maxScore: number;
   percentage: number;
@@ -67,7 +69,8 @@ export function filterAppraisals(
       (filters.school === ALL || a.schoolName === filters.school) &&
       (filters.schoolLevel === ALL || a.schoolLevel === filters.schoolLevel) &&
       (filters.subjectCategory === ALL || a.subjectCategory === filters.subjectCategory) &&
-      (filters.careerLevel === ALL || a.careerLevel === filters.careerLevel)
+      (filters.careerLevel === ALL || a.careerLevel === filters.careerLevel) &&
+      (filters.appraiser === ALL || a.appraiserName === filters.appraiser)
   );
 }
 
@@ -78,6 +81,7 @@ function describeScope(filters: SchoolReportFilters): string {
   if (filters.schoolLevel !== ALL) parts.push(filters.schoolLevel);
   if (filters.subjectCategory !== ALL) parts.push(filters.subjectCategory);
   if (filters.careerLevel !== ALL) parts.push(`${filters.careerLevel} Level`);
+  if (filters.appraiser !== ALL) parts.push(`Appraised by ${filters.appraiser}`);
   return parts.length ? parts.join(' • ') : 'All observations across the Eduversal network';
 }
 
@@ -158,6 +162,7 @@ export function buildSchoolReport(
       careerLevel: record.careerLevel,
       observationDate: record.observationDate,
       academicYear: record.academicYear,
+      appraiserName: record.appraiserName || 'Unassigned',
       rawScore: stats.totalRaw,
       maxScore: stats.maxTotal,
       percentage: stats.percentage,
@@ -428,7 +433,7 @@ export function generateSchoolReportPdf(
       body(
         `${o.schoolName} • ${o.schoolLevel} • ${o.careerLevel} Level • Observed ${formatDate(
           o.observationDate
-        )} • AY ${o.academicYear}`,
+        )} • AY ${o.academicYear} • Appraiser: ${o.appraiserName}`,
         0,
         8.5
       );
@@ -569,7 +574,9 @@ export function generateSchoolReportDoc(
         <h3>${i + 1}. ${escapeHtml(o.teacherName)} &ndash; ${escapeHtml(o.subject)}</h3>
         <p class="meta">${escapeHtml(o.schoolName)} &bull; ${escapeHtml(o.schoolLevel)} &bull;
         ${escapeHtml(o.careerLevel)} Level &bull; Observed ${formatDate(o.observationDate)}
-        &bull; AY ${escapeHtml(o.academicYear)}</p>
+        &bull; AY ${escapeHtml(o.academicYear)} &bull; Appraiser: ${escapeHtml(
+          o.appraiserName
+        )}</p>
         <p><strong>Result:</strong> ${o.rawScore}/${o.maxScore} (${o.percentage}%) &ndash;
         Grade ${escapeHtml(o.grade)}, ${escapeHtml(o.predicate)}.
         ${o.ratedCount} indicators rated${
@@ -709,5 +716,6 @@ export function buildReportFilename(data: SchoolReportData, extension: string): 
   if (data.filters.academicYear !== ALL) parts.push(data.filters.academicYear.replace('/', '-'));
   if (data.filters.school !== ALL) parts.push(data.filters.school.replace(/\s+/g, '_'));
   if (data.filters.careerLevel !== ALL) parts.push(data.filters.careerLevel);
+  if (data.filters.appraiser !== ALL) parts.push(data.filters.appraiser.replace(/\s+/g, '_'));
   return `${parts.join('_')}.${extension}`;
 }

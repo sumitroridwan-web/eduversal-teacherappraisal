@@ -32,6 +32,7 @@ import {
   AutoGradeResult,
   LessonActivity,
   EDUVERSAL_SCHOOLS,
+  APPRAISERS,
   ACADEMIC_YEARS,
   EVIDENCE_SOURCES,
   EvidenceSource,
@@ -688,15 +689,25 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
 
           {/* Appraiser Name & Role */}
           <div>
-            <label className="block text-slate-600 font-medium mb-1">Appraiser Name &amp; Title</label>
-            <input
+            <label htmlFor="input-appraiser-name" className="block text-slate-600 font-medium mb-1">
+              Appraiser Name
+            </label>
+            <select
               id="input-appraiser-name"
-              type="text"
               value={record.appraiserName}
               onChange={(e) => setRecord({ ...record, appraiserName: e.target.value })}
-              placeholder="e.g. Dr. Arthur Pendelton"
-              className="w-full bg-white text-slate-900 px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-2xs"
-            />
+              className="w-full bg-white text-slate-900 px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-2xs cursor-pointer"
+            >
+              <option value="">Select appraiser…</option>
+              {APPRAISERS.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+              {/* Keeps a legacy or externally-entered name visible rather than
+                  silently blanking it when the record is reopened. */}
+              {record.appraiserName && !APPRAISERS.includes(record.appraiserName as any) && (
+                <option value={record.appraiserName}>{record.appraiserName}</option>
+              )}
+            </select>
           </div>
 
           {/* Academic Year */}

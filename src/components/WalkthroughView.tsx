@@ -29,6 +29,7 @@ import {
   LESSON_PHASES,
   ACADEMIC_YEARS,
   EDUVERSAL_SCHOOLS,
+  APPRAISERS,
   SubjectCategory,
   currentAcademicYear,
 } from '../types';
@@ -95,6 +96,7 @@ export const WalkthroughView: React.FC = () => {
     school: ALL,
     subject: ALL,
     observerRole: ALL,
+    observerName: ALL,
     lessonPhase: ALL,
   });
 
@@ -331,11 +333,19 @@ export const WalkthroughView: React.FC = () => {
             </div>
             <div>
               <label className="block text-slate-600 font-medium mb-1">{t('wt.observerName')}</label>
-              <input
+              <select
                 value={draft.observerName}
                 onChange={(e) => setField({ observerName: e.target.value })}
-                className={inputClass}
-              />
+                className={`${inputClass} cursor-pointer`}
+              >
+                <option value="">Select observer…</option>
+                {APPRAISERS.map((name) => (
+                  <option key={name} value={name}>{name}</option>
+                ))}
+                {draft.observerName && !APPRAISERS.includes(draft.observerName as any) && (
+                  <option value={draft.observerName}>{draft.observerName}</option>
+                )}
+              </select>
             </div>
             <div>
               <label className="block text-slate-600 font-medium mb-1">{t('wt.observerRole')}</label>
@@ -645,7 +655,7 @@ export const WalkthroughView: React.FC = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 text-xs">
               <div>
                 <label className="block text-[11px] font-semibold text-slate-600 mb-1">
                   Academic Year
@@ -696,6 +706,20 @@ export const WalkthroughView: React.FC = () => {
                   {OBSERVER_ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
                 </select>
               </div>
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                  {t('wt.observerName')}
+                </label>
+                <select
+                  value={filters.observerName}
+                  onChange={(e) => setFilters({ ...filters, observerName: e.target.value })}
+                  className={`${inputClass} cursor-pointer`}
+                >
+                  <option value={ALL}>All observers</option>
+                  {APPRAISERS.map((a) => <option key={a} value={a}>{a}</option>)}
+                </select>
+              </div>
+
               <div>
                 <label className="block text-[11px] font-semibold text-slate-600 mb-1">
                   Lesson Phase

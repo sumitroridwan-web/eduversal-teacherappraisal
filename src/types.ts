@@ -20,6 +20,24 @@ export const EDUVERSAL_SCHOOLS = [
 
 export type EduversalSchoolName = typeof EDUVERSAL_SCHOOLS[number];
 
+/** The Eduversal appraisal team. Used for the appraiser and observer fields. */
+export const APPRAISERS = [
+  'Aan Mulyana',
+  'Ade Setyawati',
+  'Akhmad Afwa',
+  'Alif Perdana',
+  'Eki Maulana',
+  'Fuad Imamguliyev',
+  'Jaini Mukhlis',
+  'Kyaw Moe Aung (Muhammad Ali)',
+  'Mikawati',
+  'Muhammad Iqbal',
+  'Nudiya Lisholati',
+  "Qurrota A'yun",
+  'Ridwan Sumitro',
+  'Vani Miyanti Putri',
+] as const;
+
 /**
  * Academic years selectable on an observation. The Eduversal year runs from
  * July, so anything observed from July onwards belongs to the year starting
