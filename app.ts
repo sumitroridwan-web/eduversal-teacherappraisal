@@ -273,9 +273,9 @@ Provide a comprehensive, highly constructive pedagogical breakdown in JSON forma
 - higherOrderRatio: estimated % of questions/activities activating Bloom's Higher-Order Thinking (Analysis, Evaluation, Creation).
 - timeline: array of key lesson phases (e.g. "00:00 - 05:30: Opening & Apperception", with summary and observation notes).
 - domainScores: suggested 1-4 rating with specific evidence notes for major indicators (D1.2, D2.2, D2.4, D3.3, D3.5, D3.10, D3.11, D3.18, D3.19, D4.2).
-- glow: specific praise and strengths grounded in observed evidence.
-- grow: targeted reflective growth questions for the post-conference.
-- go: concrete, time-bound next steps and actionable commitments for the teacher.
+- glow: exactly 3 specific praises and strengths grounded in observed evidence.
+- grow: exactly 3 targeted reflective growth questions for the post-conference.
+- go: exactly 3 concrete, time-bound next steps and actionable commitments for the teacher.
 - languageProficiency: analysis of CALP (Cognitive Academic Language Proficiency) and BICS usage.
 - classroomConditions: what the audio reveals about the conditions for learning -
   noise and its source, transitions, off-task drift, teacher responses to
@@ -420,9 +420,9 @@ Generate professional, structured post-observation feedback (Glow / Grow / Go pr
 ${JSON.stringify(scoredItems || [], null, 2)}
 
 Provide high-impact, empathetic, research-informed feedback aligned with Danielson FfT and Marzano instructional strategies:
-1. Glow (3-4 specific praises with rubric evidence)
-2. Grow (3 reflective coaching questions designed to prompt deep professional reflection)
-3. Go (3 concrete, measurable commitments/next steps)
+1. Glow (exactly 3 specific praises with rubric evidence)
+2. Grow (exactly 3 reflective coaching questions designed to prompt deep professional reflection)
+3. Go (exactly 3 concrete, measurable commitments/next steps)
 4. Synthesis Paragraph for the official appraisal record.
 `;
 
@@ -594,17 +594,17 @@ could not be observed and what further evidence would close that gap.
             glow: {
               type: Type.ARRAY,
               items: { type: Type.STRING },
-              description: "3-4 observed strengths grounded in evidence",
+              description: "Exactly 3 observed strengths grounded in evidence",
             },
             grow: {
               type: Type.ARRAY,
               items: { type: Type.STRING },
-              description: "3 reflective developmental questions for coaching",
+              description: "Exactly 3 reflective developmental questions for coaching",
             },
             go: {
               type: Type.ARRAY,
               items: { type: Type.STRING },
-              description: "3 actionable time-bound commitments for next steps",
+              description: "Exactly 3 actionable time-bound commitments for next steps",
             },
           },
           required: ["summaryEvaluation", "scores", "glow", "grow", "go"],

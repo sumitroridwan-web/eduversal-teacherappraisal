@@ -357,9 +357,15 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
       ...prev,
       feedback: {
         ...capFeedback({
-          glow: Array.from(new Set([...prev.feedback.glow, ...glow])),
-          grow: Array.from(new Set([...prev.feedback.grow, ...grow])),
-          go: Array.from(new Set([...prev.feedback.go, ...go])),
+          glow: Array.from(
+            new Set([...prev.feedback.glow, ...glow.slice(0, DEFAULT_FEEDBACK_ITEMS)])
+          ),
+          grow: Array.from(
+            new Set([...prev.feedback.grow, ...grow.slice(0, DEFAULT_FEEDBACK_ITEMS)])
+          ),
+          go: Array.from(
+            new Set([...prev.feedback.go, ...go.slice(0, DEFAULT_FEEDBACK_ITEMS)])
+          ),
         }),
       },
     }));

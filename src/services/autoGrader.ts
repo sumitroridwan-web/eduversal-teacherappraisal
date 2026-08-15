@@ -420,11 +420,12 @@ function calculateAutoGradeSummary(
     observedCount,
     notObservableCount: enrichedScores.length - observedCount,
     totalIndicatorCount: enrichedScores.length,
-    // Capped regardless of source: the model can return a long list, and the
-    // debrief has to stay discussable.
-    glow: (extraData.glow || []).slice(0, MAX_FEEDBACK_ITEMS),
-    grow: (extraData.grow || []).slice(0, MAX_FEEDBACK_ITEMS),
-    go: (extraData.go || []).slice(0, MAX_FEEDBACK_ITEMS),
+    // Generated feedback lands at the default of three, whichever engine
+    // produced it. The model happily returns four or five; the appraiser adds
+    // more by hand if the lesson warrants it, up to MAX_FEEDBACK_ITEMS.
+    glow: (extraData.glow || []).slice(0, DEFAULT_FEEDBACK_ITEMS),
+    grow: (extraData.grow || []).slice(0, DEFAULT_FEEDBACK_ITEMS),
+    go: (extraData.go || []).slice(0, DEFAULT_FEEDBACK_ITEMS),
     summaryEvaluation:
       extraData.summaryEvaluation || extraData.summary || 'Appraisal evaluation generated.',
     activitiesEvaluatedCount: activitiesCount,
