@@ -1,6 +1,6 @@
 import { TeacherAppraisalRecord, AutoGradeResult, CareerLevel, LessonActivity } from '../types';
 import { getItemsForLevel } from '../data/frameworkRubrics';
-import { MAX_FEEDBACK_ITEMS } from './glowGrowGo';
+import { MAX_FEEDBACK_ITEMS, DEFAULT_FEEDBACK_ITEMS } from './glowGrowGo';
 
 /**
  * Auto-grades a lesson observation using either Gemini AI backend or
@@ -325,7 +325,7 @@ function executeRuleBasedAutoGrade(
   // the indicator itself; repeating it here made entries unreadable.
   const glow = observed
     .filter((s) => (s.score || 0) >= 3)
-    .slice(0, MAX_FEEDBACK_ITEMS)
+    .slice(0, DEFAULT_FEEDBACK_ITEMS)
     .map((s) => `${s.title}: ${s.score === 4 ? 'Distinguished' : 'Proficient'} practice evidenced.`);
 
   const grow = notObservable
@@ -358,8 +358,8 @@ function executeRuleBasedAutoGrade(
     scoredList,
     {
       glow,
-      grow: grow.slice(0, MAX_FEEDBACK_ITEMS),
-      go: go.slice(0, MAX_FEEDBACK_ITEMS),
+      grow: grow.slice(0, DEFAULT_FEEDBACK_ITEMS),
+      go: go.slice(0, DEFAULT_FEEDBACK_ITEMS),
       summaryEvaluation,
     },
     activities.length

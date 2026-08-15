@@ -1,5 +1,6 @@
 import { TeacherAppraisalRecord, CareerLevel, SchoolLevel, SubjectCategory, currentAcademicYear } from '../types';
 import { calculateF2Scores, calculateF2Predicate, getItemsForLevel } from '../data/frameworkRubrics';
+import { capFeedback } from './glowGrowGo';
 
 const STORAGE_KEY = 'eduversal_appraisals_v4_clean';
 
@@ -64,6 +65,9 @@ export function saveOrUpdateAppraisal(record: TeacherAppraisalRecord): TeacherAp
   record.indicativeGrade = stats.grade;
 
   record.finalPredicate = calculateF2Predicate(stats.percentage).predicate;
+  // Normalise records saved before the cap existed, so a stored column of
+  // eight entries cannot keep displaying as "8 / 5".
+  record.feedback = capFeedback(record.feedback);
   record.updatedAt = new Date().toISOString();
 
   const all = loadAppraisals();

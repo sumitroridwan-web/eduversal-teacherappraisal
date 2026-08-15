@@ -8,6 +8,13 @@ import { getItemsForLevel } from '../data/frameworkRubrics';
  */
 export const MAX_FEEDBACK_ITEMS = 5;
 
+/**
+ * How many entries generation produces. Three key notes per column is enough
+ * to carry a debrief; the appraiser can add up to MAX_FEEDBACK_ITEMS by hand
+ * where a lesson genuinely warrants more.
+ */
+export const DEFAULT_FEEDBACK_ITEMS = 3;
+
 const SCORE_LABEL: Record<number, string> = {
   4: 'Distinguished',
   3: 'Proficient',
@@ -74,7 +81,10 @@ function unique(values: string[]): string[] {
  * question for the weakest, and Go carries that rubric's committed next step -
  * so the debrief traces back to the evidence rather than to generic advice.
  */
-export function generateGlowGrowGo(record: TeacherAppraisalRecord): GlowGrowGo {
+export function generateGlowGrowGo(
+  record: TeacherAppraisalRecord,
+  count: number = DEFAULT_FEEDBACK_ITEMS
+): GlowGrowGo {
   const rated = ratedItems(record);
 
   if (rated.length === 0) {
@@ -107,29 +117,29 @@ export function generateGlowGrowGo(record: TeacherAppraisalRecord): GlowGrowGo {
     .slice()
     .sort((a, b) => a.score - b.score || a.item.id.localeCompare(b.item.id));
 
-  const glow = unique(
-    strengths.slice(0, MAX_FEEDBACK_ITEMS).map(describePractice)
-  ).slice(0, MAX_FEEDBACK_ITEMS);
+  const limit = Math.min(count, MAX_FEEDBACK_ITEMS);
+
+  const glow = unique(strengths.slice(0, limit).map(describePractice)).slice(0, limit);
 
   const grow = unique(
     growthPool
-      .slice(0, MAX_FEEDBACK_ITEMS)
+      .slice(0, limit)
       .map(
         (r) =>
           r.item.growPrompt ||
           `What would move ${r.item.title.toLowerCase()} to the next level?`
       )
-  ).slice(0, MAX_FEEDBACK_ITEMS);
+  ).slice(0, limit);
 
   const go = unique(
     growthPool
-      .slice(0, MAX_FEEDBACK_ITEMS)
+      .slice(0, limit)
       .map(
         (r) =>
           r.item.goPrompt ||
           `Plan one concrete change to ${r.item.title.toLowerCase()} for the next lesson.`
       )
-  ).slice(0, MAX_FEEDBACK_ITEMS);
+  ).slice(0, limit);
 
   return { glow, grow, go };
 }

@@ -52,7 +52,12 @@ import { ClassroomPhotoEvidence } from './ClassroomPhotoEvidence';
 import { AutoGradeModal } from './AutoGradeModal';
 import { executeAutoGrade } from '../services/autoGrader';
 import { saveOrUpdateAppraisal } from '../services/storage';
-import { generateGlowGrowGo, MAX_FEEDBACK_ITEMS } from '../services/glowGrowGo';
+import {
+  generateGlowGrowGo,
+  capFeedback,
+  MAX_FEEDBACK_ITEMS,
+  DEFAULT_FEEDBACK_ITEMS,
+} from '../services/glowGrowGo';
 
 interface AppraisalFormProps {
   initialRecord: TeacherAppraisalRecord;
@@ -85,7 +90,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
 
   // Synchronize initial record when selected appraisal changes
   useEffect(() => {
-    setRecord(initialRecord);
+    setRecord({ ...initialRecord, feedback: capFeedback(initialRecord.feedback) });
   }, [initialRecord]);
 
   // Autosave. Writes directly to storage rather than through onSave: routing
@@ -174,12 +179,14 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
       return {
         ...prev,
         scores: updatedScores,
+        // Capped after merging: unioning existing entries with generated ones
+        // pushed columns past the limit (8 of 5 was reachable).
         feedback: feedback
-          ? {
+          ? capFeedback({
               glow: Array.from(new Set([...prev.feedback.glow, ...feedback.glow])),
               grow: Array.from(new Set([...prev.feedback.grow, ...feedback.grow])),
               go: Array.from(new Set([...prev.feedback.go, ...feedback.go])),
-            }
+            })
           : prev.feedback,
       };
     });
@@ -349,9 +356,11 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
     setRecord((prev) => ({
       ...prev,
       feedback: {
-        glow: Array.from(new Set([...prev.feedback.glow, ...glow])),
-        grow: Array.from(new Set([...prev.feedback.grow, ...grow])),
-        go: Array.from(new Set([...prev.feedback.go, ...go])),
+        ...capFeedback({
+          glow: Array.from(new Set([...prev.feedback.glow, ...glow])),
+          grow: Array.from(new Set([...prev.feedback.grow, ...grow])),
+          go: Array.from(new Set([...prev.feedback.go, ...go])),
+        }),
       },
     }));
   };
