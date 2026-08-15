@@ -1,5 +1,7 @@
-import express from "express";
+import "dotenv/config";
+import express, { NextFunction, Request, Response } from "express";
 import path from "path";
+import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 
@@ -8,6 +10,153 @@ const PORT = 3000;
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
+
+/* ------------------------------------------------------------------ *
+ * Access gate
+ *
+ * The platform password is read from APP_PASSWORD and is never sent to
+ * the browser - the client only ever posts a candidate password and
+ * receives a signed, expiring session cookie in return.
+ * ------------------------------------------------------------------ */
+
+const SESSION_COOKIE = "eduversal_session";
+const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
+
+// Signing key for session cookies. Set APP_SESSION_SECRET to keep sessions
+// valid across restarts; otherwise a fresh key is generated at boot and
+// everyone is signed out when the server restarts.
+const SESSION_SECRET =
+  process.env.APP_SESSION_SECRET || crypto.randomBytes(32).toString("hex");
+
+function getAppPassword(): string | null {
+  const pw = process.env.APP_PASSWORD;
+  return pw && pw.length > 0 ? pw : null;
+}
+
+function sign(value: string): string {
+  return crypto.createHmac("sha256", SESSION_SECRET).update(value).digest("hex");
+}
+
+function issueToken(): string {
+  const expiresAt = String(Date.now() + SESSION_TTL_MS);
+  return `${expiresAt}.${sign(expiresAt)}`;
+}
+
+function isValidToken(token: string | undefined): boolean {
+  if (!token) return false;
+  const [expiresAt, signature] = token.split(".");
+  if (!expiresAt || !signature) return false;
+
+  const expected = sign(expiresAt);
+  if (
+    signature.length !== expected.length ||
+    !crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
+  ) {
+    return false;
+  }
+  return Number(expiresAt) > Date.now();
+}
+
+function readCookie(req: Request, name: string): string | undefined {
+  const header = req.headers.cookie;
+  if (!header) return undefined;
+  for (const part of header.split(";")) {
+    const idx = part.indexOf("=");
+    if (idx === -1) continue;
+    if (part.slice(0, idx).trim() === name) {
+      return decodeURIComponent(part.slice(idx + 1).trim());
+    }
+  }
+  return undefined;
+}
+
+function isAuthenticated(req: Request): boolean {
+  return isValidToken(readCookie(req, SESSION_COOKIE));
+}
+
+// Compare in constant time so response timing does not leak the password.
+function passwordMatches(candidate: string, actual: string): boolean {
+  const a = crypto.createHash("sha256").update(candidate).digest();
+  const b = crypto.createHash("sha256").update(actual).digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
+// Throttle guessing: 10 failures per IP per 15 minutes.
+const MAX_ATTEMPTS = 10;
+const ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
+const failedAttempts = new Map<string, { count: number; firstAt: number }>();
+
+function attemptsExceeded(ip: string): boolean {
+  const entry = failedAttempts.get(ip);
+  if (!entry) return false;
+  if (Date.now() - entry.firstAt > ATTEMPT_WINDOW_MS) {
+    failedAttempts.delete(ip);
+    return false;
+  }
+  return entry.count >= MAX_ATTEMPTS;
+}
+
+function recordFailure(ip: string): void {
+  const entry = failedAttempts.get(ip);
+  if (!entry || Date.now() - entry.firstAt > ATTEMPT_WINDOW_MS) {
+    failedAttempts.set(ip, { count: 1, firstAt: Date.now() });
+  } else {
+    entry.count += 1;
+  }
+}
+
+function requireAuth(req: Request, res: Response, next: NextFunction) {
+  if (!isAuthenticated(req)) {
+    return res.status(401).json({ error: "Not authenticated." });
+  }
+  next();
+}
+
+// Is the gate switched on at all?
+app.get("/api/auth/session", (req, res) => {
+  res.json({
+    authenticated: isAuthenticated(req),
+    configured: getAppPassword() !== null,
+  });
+});
+
+app.post("/api/auth/login", (req, res) => {
+  const actual = getAppPassword();
+  if (!actual) {
+    return res.status(503).json({
+      error:
+        "No platform password is configured. Set APP_PASSWORD in the server environment.",
+    });
+  }
+
+  const ip = req.ip || "unknown";
+  if (attemptsExceeded(ip)) {
+    return res
+      .status(429)
+      .json({ error: "Too many failed attempts. Try again in 15 minutes." });
+  }
+
+  const candidate = typeof req.body?.password === "string" ? req.body.password : "";
+  if (!candidate || !passwordMatches(candidate, actual)) {
+    recordFailure(ip);
+    return res.status(401).json({ error: "Incorrect password." });
+  }
+
+  failedAttempts.delete(ip);
+  res.cookie(SESSION_COOKIE, issueToken(), {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: SESSION_TTL_MS,
+    path: "/",
+  });
+  res.json({ success: true });
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  res.clearCookie(SESSION_COOKIE, { path: "/" });
+  res.json({ success: true });
+});
 
 // Initialize Gemini AI Client
 function getGeminiClient(): GoogleGenAI | null {
@@ -32,7 +181,7 @@ app.get("/api/health", (req, res) => {
 });
 
 // API: Analyze Lesson Audio or Transcript
-app.post("/api/analyze-lesson", async (req, res) => {
+app.post("/api/analyze-lesson", requireAuth, async (req, res) => {
   try {
     const ai = getGeminiClient();
     if (!ai) {
@@ -183,7 +332,7 @@ Provide a comprehensive, highly constructive pedagogical breakdown in JSON forma
 });
 
 // API: Generate Custom Glow / Grow / Go & Action Recommendations
-app.post("/api/ai-feedback", async (req, res) => {
+app.post("/api/ai-feedback", requireAuth, async (req, res) => {
   try {
     const ai = getGeminiClient();
     if (!ai) {
@@ -236,7 +385,7 @@ Provide high-impact, empathetic, research-informed feedback aligned with Daniels
 });
 
 // API: Auto-Grade Teacher Lesson Observation based on Lesson Activities, Notes & Transcripts
-app.post("/api/auto-grade", async (req, res) => {
+app.post("/api/auto-grade", requireAuth, async (req, res) => {
   try {
     const ai = getGeminiClient();
     if (!ai) {

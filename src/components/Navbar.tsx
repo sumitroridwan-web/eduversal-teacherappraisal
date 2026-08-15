@@ -6,6 +6,7 @@ import {
   Plus,
   ShieldCheck,
   Award,
+  Lock,
 } from 'lucide-react';
 import { EduversalLogo } from './EduversalLogo';
 
@@ -24,6 +25,15 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenRubrics,
   hasActiveRecord,
 }) => {
+  // Ends the server session and returns to the password screen.
+  const handleLock = async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } finally {
+      window.location.reload();
+    }
+  };
+
   return (
     <>
       {/* Top Header */}
@@ -121,6 +131,18 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <Plus className="w-4 h-4" />
                 <span className="hidden xs:inline">New Observation</span>
                 <span className="xs:hidden">New</span>
+              </button>
+
+              {/* Lock the platform again (ends the session) */}
+              <button
+                id="nav-btn-lock"
+                type="button"
+                onClick={handleLock}
+                className="flex items-center justify-center p-1.5 bg-white hover:bg-slate-50 text-slate-500 hover:text-slate-800 rounded-lg border border-slate-200 transition cursor-pointer shadow-2xs"
+                title="Lock platform and sign out"
+                aria-label="Lock platform and sign out"
+              >
+                <Lock className="w-3.5 h-3.5" />
               </button>
 
               {/* Appraiser Avatar */}
