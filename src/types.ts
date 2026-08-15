@@ -20,6 +20,26 @@ export const EDUVERSAL_SCHOOLS = [
 
 export type EduversalSchoolName = typeof EDUVERSAL_SCHOOLS[number];
 
+/**
+ * Academic years selectable on an observation. The Eduversal year runs from
+ * July, so anything observed from July onwards belongs to the year starting
+ * in that calendar year.
+ */
+export const ACADEMIC_YEARS = [
+  '2026/2027',
+  '2027/2028',
+  '2028/2029',
+  '2029/2030',
+] as const;
+
+export type AcademicYear = typeof ACADEMIC_YEARS[number];
+
+export function currentAcademicYear(reference: Date = new Date()): string {
+  const year = reference.getFullYear();
+  const startYear = reference.getMonth() >= 6 ? year : year - 1;
+  return `${startYear}/${startYear + 1}`;
+}
+
 export type SchoolLevel =
   | 'Early Years (PG-KG)'
   | 'Primary (Grades 1-6)'
@@ -196,6 +216,7 @@ export interface TeacherAppraisalRecord {
   gradeClass: string;
   lessonTopic: string;
   learningObjectives?: string;
+  academicYear: string;
   observationDate: string;
   timeIn: string;
   timeOut: string;

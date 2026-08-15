@@ -32,6 +32,8 @@ import {
   AutoGradeResult,
   LessonActivity,
   EDUVERSAL_SCHOOLS,
+  ACADEMIC_YEARS,
+  currentAcademicYear,
 } from '../types';
 import {
   getItemsForLevel,
@@ -524,6 +526,25 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
               placeholder="e.g. Dr. Arthur Pendelton"
               className="w-full bg-white text-slate-900 px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 shadow-2xs"
             />
+          </div>
+
+          {/* Academic Year */}
+          <div>
+            <label htmlFor="input-academic-year" className="block text-slate-600 font-medium mb-1">
+              Academic Year
+            </label>
+            <select
+              id="input-academic-year"
+              value={record.academicYear || currentAcademicYear()}
+              onChange={(e) => setRecord({ ...record, academicYear: e.target.value })}
+              className="w-full p-2 bg-white border border-slate-200 rounded-lg text-slate-900 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 cursor-pointer"
+            >
+              {ACADEMIC_YEARS.map((year) => (
+                <option key={year} value={year}>
+                  {year}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Observation Date & Times */}

@@ -1,8 +1,15 @@
-import { TeacherAppraisalRecord, CareerLevel, SchoolLevel, SubjectCategory } from '../types';
+import { TeacherAppraisalRecord, CareerLevel, SchoolLevel, SubjectCategory, currentAcademicYear } from '../types';
 import { SAMPLE_APPRAISALS } from '../data/sampleAppraisals';
 import { calculateF2Scores, calculateF2Predicate, getItemsForLevel } from '../data/frameworkRubrics';
 
 const STORAGE_KEY = 'eduversal_appraisals_v4_clean';
+
+/** Records saved before academic years existed still need a value. */
+function withAcademicYear(record: TeacherAppraisalRecord): TeacherAppraisalRecord {
+  if (record.academicYear) return record;
+  const observed = record.observationDate ? new Date(record.observationDate) : new Date();
+  return { ...record, academicYear: currentAcademicYear(observed) };
+}
 
 export function loadAppraisals(): TeacherAppraisalRecord[] {
   try {
@@ -10,7 +17,7 @@ export function loadAppraisals(): TeacherAppraisalRecord[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        return parsed;
+        return parsed.map(withAcademicYear);
       }
     }
   } catch (e) {
@@ -119,6 +126,7 @@ export function createBlankAppraisal(
     gradeClass: '',
     lessonTopic: '',
     learningObjectives: '',
+    academicYear: currentAcademicYear(now),
     observationDate: now.toISOString().substring(0, 10),
     timeIn: timeString,
     timeOut: '',
