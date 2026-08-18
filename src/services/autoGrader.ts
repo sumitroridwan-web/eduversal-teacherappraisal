@@ -85,6 +85,31 @@ interface EvidenceItem {
   text: string;
 }
 
+/**
+ * Splits pasted observer notes into individually citable moments.
+ *
+ * Line breaks are the appraiser's own segmentation and are trusted first. A
+ * single unbroken block gets split on sentence ends instead, so pasting from a
+ * notebook app that strips newlines still yields separate evidence.
+ */
+function splitObserverNotes(notes?: string): string[] {
+  const trimmed = notes?.trim();
+  if (!trimmed) return [];
+
+  const lines = trimmed
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length === 1 && lines[0].length > 240) {
+    return (lines[0].match(/[^.!?]+[.!?]*/g) || [lines[0]])
+      .map((sentence) => sentence.trim())
+      .filter(Boolean);
+  }
+
+  return lines;
+}
+
 function buildEvidenceIndex(record: TeacherAppraisalRecord, activities: LessonActivity[]): EvidenceItem[] {
   const index: EvidenceItem[] = [];
 
@@ -96,9 +121,18 @@ function buildEvidenceIndex(record: TeacherAppraisalRecord, activities: LessonAc
     if (body.trim()) index.push({ ref: where, text: body });
   });
 
-  if (record.generalObserverNotes?.trim()) {
-    index.push({ ref: 'Observer notes', text: record.generalObserverNotes });
-  }
+  // The appraiser's own notes are the one source that can carry a whole lesson
+  // by itself, so they are indexed paragraph by paragraph rather than as a
+  // single blob. A blob counts as one hit however much it says, which caps
+  // every notes-only observation at "Proficient"; split, each paragraph is its
+  // own citable moment and can corroborate an indicator on its own terms.
+  const noteParagraphs = splitObserverNotes(record.generalObserverNotes);
+  noteParagraphs.forEach((para, i) => {
+    index.push({
+      ref: noteParagraphs.length > 1 ? `Observer notes, paragraph ${i + 1}` : 'Observer notes',
+      text: para,
+    });
+  });
   if (record.learningObjectives?.trim()) {
     index.push({ ref: 'Stated learning objectives', text: record.learningObjectives });
   }

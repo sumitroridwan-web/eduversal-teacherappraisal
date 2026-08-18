@@ -21,6 +21,8 @@ import {
   Check,
   Zap,
   School,
+  NotebookPen,
+  Loader2,
 } from 'lucide-react';
 import {
   TeacherAppraisalRecord,
@@ -124,6 +126,12 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
   const currentItems = getItemsForLevel(record.careerLevel);
   const config = LEVEL_SCORING_CONFIGS[record.careerLevel];
   const stats = calculateF2Scores(record.careerLevel, record.scores);
+
+  // Drives the notes card header and gates the score-from-notes button.
+  const hasObserverNotes = Boolean(record.generalObserverNotes?.trim());
+  const observerNoteWordCount = hasObserverNotes
+    ? record.generalObserverNotes.trim().split(/\s+/).length
+    : 0;
 
   // Trigger Auto-Grading Engine
   const handleTriggerAutoGrade = async () => {
@@ -787,6 +795,73 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
         </div>
       </div>
 
+      {/* Appraiser's Own Lesson Notes & Score-From-Notes Action */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm text-slate-800 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-4 border-b border-slate-100">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0 mt-0.5">
+              <NotebookPen className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2 flex-wrap">
+                <span>Appraiser&apos;s Lesson Notes</span>
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
+                  {observerNoteWordCount} {observerNoteWordCount === 1 ? 'word' : 'words'}
+                </span>
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Write or paste your own account of the lesson. The auto-grader reads it as evidence
+                and cites it back to you paragraph by paragraph.
+              </p>
+            </div>
+          </div>
+
+          <button
+            id="btn-score-from-notes"
+            type="button"
+            onClick={handleTriggerAutoGrade}
+            disabled={!hasObserverNotes || isAutoGrading}
+            title={
+              hasObserverNotes
+                ? 'Score the indicators from these notes, together with any activities, transcript and photos captured'
+                : 'Write or paste your lesson notes first'
+            }
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-teal-600 hover:from-indigo-700 hover:to-teal-700 disabled:from-slate-300 disabled:to-slate-300 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-sm min-h-[40px] w-full sm:w-auto shrink-0"
+          >
+            {isAutoGrading ? (
+              <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+            ) : (
+              <Sparkles className="w-4 h-4 text-amber-300 shrink-0" />
+            )}
+            <span>{isAutoGrading ? 'Scoring…' : 'Score From Notes'}</span>
+          </button>
+        </div>
+
+        <textarea
+          id="textarea-observer-notes"
+          value={record.generalObserverNotes}
+          onChange={(e) => setRecord({ ...record, generalObserverNotes: e.target.value })}
+          placeholder={
+            'Type or paste your notes here, one observation per paragraph, e.g.\n\n' +
+            '09:05 Starter on the board, all 28 students on task within two minutes.\n' +
+            'Teacher modelled the worked example, then asked "why does the volume change?" and waited before taking answers.\n' +
+            'Group task: mixed pairs, two tables needed a second explanation of the success criteria.\n' +
+            'Exit ticket collected at the door; three students left without completing it.'
+          }
+          rows={10}
+          className="w-full bg-white text-slate-900 text-xs sm:text-sm p-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y shadow-2xs leading-relaxed"
+        />
+
+        {/* Stated plainly: the button grades from whatever was captured, and
+            what it produces is a suggestion until the appraiser confirms it. */}
+        <p className="text-[11px] text-slate-500 leading-relaxed">
+          Scoring reads these notes alongside any lesson activities, audio transcript and captioned
+          photos you have captured. Anything the notes do not speak to is returned as
+          <strong className="text-slate-600"> not observable</strong> rather than guessed, and every
+          suggested rating stays marked as AI-suggested until you confirm it as your own judgement.
+        </p>
+      </div>
+
       {/* Structured Lesson Activities & Observation Timeline */}
       <LessonActivitiesManager
         activities={record.activities || []}
@@ -1440,22 +1515,11 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
             </div>
           </div>
 
-          {/* General Observer Summary & Post-Conference Notes */}
+          {/* Post-Conference Notes. The observation narrative itself is written
+              in the Appraiser's Lesson Notes card at the top of the sheet, which
+              stays on screen in every tab - it is the same field, kept in one
+              place so notes and the report narrative can never diverge. */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-slate-100">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
-                General Classroom Observation Summary
-              </label>
-              <textarea
-                id="textarea-observer-notes"
-                value={record.generalObserverNotes}
-                onChange={(e) => setRecord({ ...record, generalObserverNotes: e.target.value })}
-                placeholder="Comprehensive pedagogical narrative of lesson flow, student engagement, and instructional highlights..."
-                rows={4}
-                className="w-full bg-white text-slate-900 text-xs p-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y shadow-2xs"
-              />
-            </div>
-
             <div>
               <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
                 Post-Conference Discussion &amp; Professional Growth Agreement
