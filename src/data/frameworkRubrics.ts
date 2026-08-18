@@ -1301,7 +1301,15 @@ export function calculateF2Scores(
   scores: Record<string, { score: 1 | 2 | 3 | 4 | null }>
 ) {
   const items = getItemsForLevel(level);
-  const config = LEVEL_SCORING_CONFIGS[level];
+
+  // Called for every record on the portfolio screen, including records written
+  // by an older version of the sheet or pulled in from another device. A career
+  // level this build does not know left config undefined and a record with no
+  // scores map left scores undefined, and either one threw here - which, with
+  // no error boundary above, blanked the whole platform over a single bad
+  // record. Neither is worth losing the portfolio for: fall back and render.
+  const config = LEVEL_SCORING_CONFIGS[level] || LEVEL_SCORING_CONFIGS.Proficient;
+  const rated = scores || {};
 
   let rawA = 0;
   let rawB = 0;
@@ -1309,7 +1317,7 @@ export function calculateF2Scores(
   let itemsScored = 0;
 
   items.forEach((item) => {
-    const val = scores[item.id]?.score;
+    const val = rated[item.id]?.score;
     if (val) {
       itemsScored++;
       if (item.section === 'A') rawA += val;
