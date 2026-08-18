@@ -22,6 +22,7 @@ import {
   getItemsForLevel,
   calculateF2Scores,
   calculateF2Predicate,
+  COVERAGE_FLOOR,
   LEVEL_SCORING_CONFIGS,
 } from '../data/frameworkRubrics';
 
@@ -281,20 +282,32 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
             <span className="text-[10px] text-slate-300 uppercase tracking-wider font-semibold">
               F2 Indicative Reading
             </span>
-            <div className="text-3xl font-black font-mono text-emerald-400 my-1">
-              Grade {stats.grade}
-            </div>
-            <span className="text-[11px] text-slate-200">
-              {stats.grade === 'A'
-                ? 'Excellent (152–180)'
-                : stats.grade === 'B'
-                ? 'Good (117–151)'
-                : stats.grade === 'C'
-                ? 'Satisfactory (90–116)'
-                : stats.grade === 'D'
-                ? 'Needs Improvement (64–89)'
-                : 'Unsatisfactory (0–63)'}
-            </span>
+            {stats.provisional ? (
+              <>
+                <div className="text-xl font-black font-mono text-slate-200 my-1">Provisional</div>
+                <span className="text-[11px] text-slate-200">
+                  {stats.itemsScored} of {stats.totalItems} rated — below the{' '}
+                  {Math.round(COVERAGE_FLOOR * 100)}% needed to publish a grade
+                </span>
+              </>
+            ) : (
+              <>
+                <div className="text-3xl font-black font-mono text-emerald-400 my-1">
+                  Grade {stats.grade}
+                </div>
+                <span className="text-[11px] text-slate-200">
+                  {stats.grade === 'A'
+                    ? 'Excellent (152–180)'
+                    : stats.grade === 'B'
+                    ? 'Good (117–151)'
+                    : stats.grade === 'C'
+                    ? 'Satisfactory (90–116)'
+                    : stats.grade === 'D'
+                    ? 'Needs Improvement (64–89)'
+                    : 'Unsatisfactory (0–63)'}
+                </span>
+              </>
+            )}
           </div>
         </div>
 
@@ -323,7 +336,13 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
             </div>
             <div className="p-2 bg-white rounded-lg border border-slate-200">
               <div className="text-[10px] text-slate-500">Indicative Grade</div>
-              <div className="font-bold font-mono text-slate-800 text-sm mt-0.5">{stats.grade}</div>
+              <div
+                className={`font-bold font-mono text-sm mt-0.5 ${
+                  stats.provisional ? 'text-slate-400' : 'text-slate-800'
+                }`}
+              >
+                {stats.provisional ? 'Withheld' : stats.grade}
+              </div>
             </div>
             <div className="p-2 bg-white rounded-lg border border-slate-200">
               <div className="text-[10px] text-slate-500">Indicators Rated</div>
@@ -340,6 +359,15 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
 
         {/* Scope of judgement: what this result does and does not cover */}
         <div className="mb-6 text-[11px] text-slate-600 leading-relaxed">
+          {stats.provisional && (
+            <p className="mb-1 p-2 rounded-lg bg-amber-50 border border-amber-200 text-amber-900">
+              <strong>No grade is published for this observation.</strong> {stats.itemsScored} of{' '}
+              {stats.totalItems} indicators were rated, below the{' '}
+              {Math.round(COVERAGE_FLOOR * 100)}% of the framework this school requires before a
+              letter grade can stand. The ratings below are reported as they were made; the result
+              is a partial reading of the lesson, not a grade for it.
+            </p>
+          )}
           {!stats.isComplete && (
             <p className="mb-1">
               <strong>Scope:</strong> {stats.itemsScored} of {stats.totalItems} indicators were

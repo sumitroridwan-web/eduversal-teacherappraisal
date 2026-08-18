@@ -60,7 +60,12 @@ export async function executeAutoGrade(
     if (res.ok) {
       const json = await res.json();
       if (json.success && json.data) {
-        return calculateAutoGradeSummary(record.careerLevel, json.data.scores, json.data, activities.length);
+        return calculateAutoGradeSummary(
+          record.careerLevel,
+          json.data.scores,
+          { ...json.data, citationsWithdrawn: json.citationCheck?.withdrawn || 0 },
+          activities.length
+        );
       }
     }
   } catch (err) {
@@ -92,7 +97,7 @@ interface EvidenceItem {
  * single unbroken block gets split on sentence ends instead, so pasting from a
  * notebook app that strips newlines still yields separate evidence.
  */
-function splitObserverNotes(notes?: string): string[] {
+export function splitObserverNotes(notes?: string): string[] {
   const trimmed = notes?.trim();
   if (!trimmed) return [];
 
@@ -309,7 +314,7 @@ function ruleFor(id: string): IndicatorRule {
   return INDICATOR_RULES[normalised] || GENERIC_RULE;
 }
 
-function executeRuleBasedAutoGrade(
+export function executeRuleBasedAutoGrade(
   record: TeacherAppraisalRecord,
   items: ReturnType<typeof getItemsForLevel>,
   activities: LessonActivity[]
@@ -465,5 +470,6 @@ function calculateAutoGradeSummary(
     summaryEvaluation:
       extraData.summaryEvaluation || extraData.summary || 'Appraisal evaluation generated.',
     activitiesEvaluatedCount: activitiesCount,
+    citationsWithdrawn: extraData.citationsWithdrawn || 0,
   };
 }

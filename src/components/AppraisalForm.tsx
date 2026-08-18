@@ -44,6 +44,7 @@ import {
 import {
   getItemsForLevel,
   calculateF2Scores,
+  COVERAGE_FLOOR,
   LEVEL_SCORING_CONFIGS,
   PRIMARY_SECONDARY_F2_ITEMS,
   EARLY_YEARS_F2_ITEMS,
@@ -315,20 +316,11 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
     });
   };
 
-  // Quick fill all visible items with score (e.g. 3)
-  const handleQuickFill = (score: 1 | 2 | 3 | 4) => {
-    const updated = { ...record.scores };
-    currentItems.forEach((item) => {
-      if (!updated[item.id] || updated[item.id].score === null) {
-        updated[item.id] = {
-          ...(updated[item.id] || {}),
-          score,
-          notes: updated[item.id]?.notes || `Meets standard descriptor for level ${score}.`,
-        };
-      }
-    });
-    setRecord((prev) => ({ ...prev, scores: updated }));
-  };
+  // There is deliberately no bulk-fill action here. Writing a rating into every
+  // unrated indicator - with a note reading "Meets standard descriptor" - put
+  // judgements on the sheet that nobody made and no evidence supports, and
+  // nothing downstream could tell them from the appraiser's own. An indicator
+  // that was not observed stays unrated; the coverage floor reports the gap.
 
   // Clear all scores
   const handleClearScores = () => {
@@ -939,28 +931,43 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
             </div>
           </div>
 
-          {/* Indicative Grade Badge */}
+          {/* Indicative Grade Badge. Below the coverage floor the letter is
+              withheld and the scope is shown in its place - the sheet should
+              never hand back a grade the observation cannot carry. */}
           <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4 pt-3 md:pt-0 border-t md:border-t-0 md:border-l md:pl-4 border-slate-100">
             <div className="text-left sm:text-right">
-              <div className="text-xs text-slate-700 font-bold">Indicative Grade</div>
+              <div className="text-xs text-slate-700 font-bold">
+                {stats.provisional ? 'Provisional Result' : 'Indicative Grade'}
+              </div>
               <div className="text-[11px] text-slate-400">
-                Grade {stats.grade} ({Math.round((stats.totalRaw / (stats.maxTotal || 1)) * 100)}%)
+                {stats.provisional
+                  ? `${stats.itemsScored} of ${stats.totalItems} rated — ${Math.round(
+                      COVERAGE_FLOOR * 100
+                    )}% needed for a grade`
+                  : `Grade ${stats.grade} (${stats.percentage}% across ${stats.itemsScored} rated)`}
               </div>
             </div>
             <div
-              className={`w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center font-black text-xl sm:text-2xl border shadow-sm shrink-0 ${
-                stats.grade === 'A'
-                  ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
+              className={`w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center font-black border shadow-sm shrink-0 ${
+                stats.provisional
+                  ? 'bg-slate-50 text-slate-400 border-slate-200 text-[10px] uppercase tracking-wider font-bold leading-tight text-center'
+                  : stats.grade === 'A'
+                  ? 'bg-emerald-50 text-emerald-600 border-emerald-200 text-xl sm:text-2xl'
                   : stats.grade === 'B'
-                  ? 'bg-indigo-50 text-indigo-600 border-indigo-200'
+                  ? 'bg-indigo-50 text-indigo-600 border-indigo-200 text-xl sm:text-2xl'
                   : stats.grade === 'C'
-                  ? 'bg-amber-50 text-amber-600 border-amber-200'
+                  ? 'bg-amber-50 text-amber-600 border-amber-200 text-xl sm:text-2xl'
                   : stats.grade === 'D'
-                  ? 'bg-orange-50 text-orange-600 border-orange-200'
-                  : 'bg-rose-50 text-rose-600 border-rose-200'
+                  ? 'bg-orange-50 text-orange-600 border-orange-200 text-xl sm:text-2xl'
+                  : 'bg-rose-50 text-rose-600 border-rose-200 text-xl sm:text-2xl'
               }`}
+              title={
+                stats.provisional
+                  ? 'Too few indicators are rated for a grade to be published'
+                  : undefined
+              }
             >
-              {stats.grade}
+              {stats.provisional ? 'N/A' : stats.grade}
             </div>
           </div>
         </div>
@@ -989,13 +996,6 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
             >
               <Sparkles className="w-3.5 h-3.5 text-amber-500" />
               <span>Auto Grade</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleQuickFill(3)}
-              className="text-[11px] text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-2.5 py-1.5 rounded-lg border border-slate-200 transition cursor-pointer shrink-0 whitespace-nowrap"
-            >
-              Fill Proficient (3)
             </button>
             <button
               type="button"
@@ -1648,7 +1648,13 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
           <span className="text-slate-300">|</span>
           <div className="text-xs">
             <span className="text-slate-500">{t('sheet.indicativeReading')}: </span>
-            <strong className="text-emerald-600 font-bold">{t('sheet.grade')} {stats.grade}</strong>
+            {stats.provisional ? (
+              <strong className="text-slate-500 font-bold">Provisional</strong>
+            ) : (
+              <strong className="text-emerald-600 font-bold">
+                {t('sheet.grade')} {stats.grade}
+              </strong>
+            )}
           </div>
           <span className="text-slate-300">|</span>
 

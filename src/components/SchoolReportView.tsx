@@ -285,8 +285,9 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
                 {t('report.execSummary')}
               </h2>
               <p className="text-xs text-slate-700 leading-relaxed">
-                Average Framework 2 attainment across the {report.totalObservations} observation
-                {report.totalObservations === 1 ? '' : 's'} in scope is{' '}
+                Average Framework 2 attainment across the {report.gradedObservations} graded
+                observation
+                {report.gradedObservations === 1 ? '' : 's'} in scope is{' '}
                 <strong>{report.averagePercentage}%</strong>. Grades awarded:{' '}
                 {Object.entries(report.gradeDistribution)
                   .filter(([, n]) => Number(n) > 0)
@@ -294,6 +295,15 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
                   .join(', ') || 'none recorded'}
                 .
               </p>
+              {report.provisionalObservations > 0 && (
+                <p className="text-xs text-slate-600 leading-relaxed mt-2">
+                  {report.provisionalObservations} further observation
+                  {report.provisionalObservations === 1 ? '' : 's'} rated too little of the
+                  framework to carry a grade and {report.provisionalObservations === 1 ? 'is' : 'are'}{' '}
+                  reported as <em>provisional</em> — listed below, excluded from the average and the
+                  grade profile.
+                </p>
+              )}
               {report.totalNotObservable > 0 && (
                 <p className="text-xs text-slate-600 leading-relaxed mt-2">
                   {report.totalNotObservable} indicator ratings were recorded as{' '}
@@ -340,8 +350,14 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
                       <h3 className="text-sm font-bold text-slate-900">
                         {i + 1}. {o.teacherName} — {o.subject}
                       </h3>
-                      <span className="font-mono font-bold text-[#165963] text-sm">
-                        {o.percentage}% • Grade {o.grade}
+                      <span
+                        className={`font-mono font-bold text-sm ${
+                          o.provisional ? 'text-slate-400' : 'text-[#165963]'
+                        }`}
+                      >
+                        {o.provisional
+                          ? `${o.ratedCount} of ${o.ratedCount + o.notObservableCount} rated • Provisional`
+                          : `${o.percentage}% • Grade ${o.grade}`}
                       </span>
                     </div>
                     <p className="text-[11px] text-slate-500 mt-0.5">

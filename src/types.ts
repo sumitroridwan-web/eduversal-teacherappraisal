@@ -211,6 +211,13 @@ export interface AutoGradeResult {
   observedCount: number;
   notObservableCount: number;
   totalIndicatorCount: number;
+  /**
+   * Ratings the server withdrew because the evidence they cited could not be
+   * found in the captured record. Shown to the appraiser rather than absorbed
+   * silently - a grader that quietly drops its own ratings is not a grader
+   * anyone should trust on the ones it kept.
+   */
+  citationsWithdrawn?: number;
   glow: string[];
   grow: string[];
   go: string[];

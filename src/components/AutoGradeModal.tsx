@@ -188,6 +188,14 @@ export const AutoGradeModal: React.FC<AutoGradeModalProps> = ({
                       {notObservableCount} not observable
                     </span>
                   )}
+                  {!!result.citationsWithdrawn && (
+                    <span
+                      className="text-[10px] text-amber-700 block mt-0.5 font-medium"
+                      title="These ratings cited evidence that could not be found in the captured record, so they were withdrawn rather than shown to you as scores."
+                    >
+                      {result.citationsWithdrawn} withdrawn — citation not found
+                    </span>
+                  )}
                 </div>
 
                 <div className="bg-white/90 p-3 rounded-xl border border-slate-200 shadow-2xs">

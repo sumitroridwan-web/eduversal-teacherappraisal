@@ -63,9 +63,14 @@ export function saveOrUpdateAppraisal(record: TeacherAppraisalRecord): TeacherAp
   // Matches f2Percentage: the maximum across rated indicators, not the whole rubric.
   record.f2MaxScore = stats.maxRated;
   record.f2Percentage = stats.percentage;
-  record.indicativeGrade = stats.grade;
 
-  record.finalPredicate = calculateF2Predicate(stats.percentage).predicate;
+  // Below the coverage floor the observation has no grade to cache. Storing one
+  // anyway would put a letter on the record that the report refuses to print,
+  // and anything reading the stored field would quietly disagree with the sheet.
+  record.indicativeGrade = stats.provisional ? undefined : stats.grade;
+  record.finalPredicate = stats.provisional
+    ? undefined
+    : calculateF2Predicate(stats.percentage).predicate;
   // Normalise records saved before the cap existed, so a stored column of
   // eight entries cannot keep displaying as "8 / 5".
   record.feedback = capFeedback(record.feedback);

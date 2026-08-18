@@ -16,6 +16,7 @@ import {
   Sparkles,
   ChevronDown,
   FileText,
+  AlertTriangle,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -39,7 +40,7 @@ import {
   ReferenceLine,
 } from 'recharts';
 import { TeacherAppraisalRecord, SchoolLevel, SubjectCategory, CareerLevel, ItemScoreRecord, EDUVERSAL_SCHOOLS } from '../types';
-import { calculateF2Scores, calculateF2Predicate } from '../data/frameworkRubrics';
+import { calculateF2Scores, calculateF2Predicate, COVERAGE_FLOOR } from '../data/frameworkRubrics';
 
 interface OverviewAnalyticsProps {
   appraisals: TeacherAppraisalRecord[];
@@ -106,9 +107,16 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
     hasDomainData,
     teacherRankings,
     progressionReadyCount,
+    gradedCount,
+    provisionalCount,
   } = useMemo(() => {
     const grades: Record<string, number> = { A: 0, B: 0, C: 0, D: 0, F: 0 };
     let f2Sum = 0;
+
+    // Observations that rated too little of the framework to carry a grade.
+    // They are counted and reported, never folded into a grade statistic.
+    let gradedCount = 0;
+    let provisionalCount = 0;
 
     const sLevelMap: Record<string, { count: number; f2Sum: number; aCount: number; bCount: number }> = {};
     const catMap: Record<string, { count: number; f2Sum: number; aCount: number }> = {};
@@ -135,6 +143,34 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
 
     filteredAppraisals.forEach((a) => {
       const f2Stats = calculateF2Scores(a.careerLevel, a.scores);
+
+      // Domain averages are built from individual indicator ratings, whose
+      // denominator does not move with how much of the lesson was seen, so a
+      // partial observation still contributes everything it genuinely rated.
+      // Scores are { score, notes } records, and Early Years items are prefixed
+      // EYD1..EYD4, so only rated items count here.
+      Object.entries(a.scores || {}).forEach(([code, val]: [string, ItemScoreRecord]) => {
+        const rating = val?.score;
+        if (typeof rating !== 'number') return;
+
+        const pct = (rating / 4) * 100;
+        if (code.startsWith('D1.') || code.startsWith('EYD1.')) d1Scores.push(pct);
+        else if (code.startsWith('D2.') || code.startsWith('EYD2.')) d2Scores.push(pct);
+        else if (code.startsWith('D3.') || code.startsWith('EYD3.')) d3Scores.push(pct);
+        else if (code.startsWith('D4.') || code.startsWith('EYD4.')) d4Scores.push(pct);
+      });
+
+      // Everything below compares whole observations to each other on a single
+      // percentage. That comparison only holds where the percentages were
+      // measured across comparable amounts of the framework, so a provisional
+      // observation is counted and set aside rather than ranked against a full
+      // one it would beat on three lucky indicators.
+      if (f2Stats.provisional) {
+        provisionalCount++;
+        return;
+      }
+      gradedCount++;
+
       const band = calculateF2Predicate(f2Stats.percentage);
 
       grades[f2Stats.grade] = (grades[f2Stats.grade] || 0) + 1;
@@ -173,19 +209,6 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
       careerMap[a.careerLevel].count++;
       careerMap[a.careerLevel].f2Sum += f2Stats.percentage;
 
-      // Extract domain scores. Scores are { score, notes } records, and Early
-      // Years items are prefixed EYD1..EYD4, so only rated items count here.
-      Object.entries(a.scores || {}).forEach(([code, val]: [string, ItemScoreRecord]) => {
-        const rating = val?.score;
-        if (typeof rating !== 'number') return;
-
-        const pct = (rating / 4) * 100;
-        if (code.startsWith('D1.') || code.startsWith('EYD1.')) d1Scores.push(pct);
-        else if (code.startsWith('D2.') || code.startsWith('EYD2.')) d2Scores.push(pct);
-        else if (code.startsWith('D3.') || code.startsWith('EYD3.')) d3Scores.push(pct);
-        else if (code.startsWith('D4.') || code.startsWith('EYD4.')) d4Scores.push(pct);
-      });
-
       rankings.push({
         id: a.id,
         name: a.teacherName,
@@ -199,8 +222,9 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
       });
     });
 
-    const count = filteredAppraisals.length || 1;
-    const avgF2 = Math.round((f2Sum / count) * 10) / 10;
+    // Divided by the observations that produced a grade, not by every record on
+    // screen - otherwise each provisional observation drags the mean toward zero.
+    const avgF2 = gradedCount > 0 ? Math.round((f2Sum / gradedCount) * 10) / 10 : 0;
 
     // No rated items means no attainment to report - report 0, never a
     // placeholder, so an empty dashboard cannot read as a passing score.
@@ -216,7 +240,7 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
 
     const progReady = filteredAppraisals.filter((a) => {
       const s = calculateF2Scores(a.careerLevel, a.scores);
-      return (s.grade === 'A' || s.grade === 'B') && s.percentage >= 75;
+      return !s.provisional && (s.grade === 'A' || s.grade === 'B') && s.percentage >= 75;
     }).length;
 
     rankings.sort((a, b) => b.f2Pct - a.f2Pct);
@@ -232,6 +256,8 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
       hasDomainData: ratedItemCount > 0,
       teacherRankings: rankings,
       progressionReadyCount: progReady,
+      gradedCount,
+      provisionalCount,
     };
   }, [filteredAppraisals]);
 
@@ -422,7 +448,9 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
               Avg F2 Observation %
             </div>
             <div className="text-2xl font-bold font-mono text-emerald-600 mt-1">{avgF2Pct}%</div>
-            <div className="text-[11px] text-emerald-600 mt-0.5 font-medium">Framework 2 Benchmark</div>
+            <div className="text-[11px] text-emerald-600 mt-0.5 font-medium">
+              Across {gradedCount} graded {gradedCount === 1 ? 'observation' : 'observations'}
+            </div>
           </div>
           <div className="w-12 h-12 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
             <TrendingUp className="w-6 h-6" />
@@ -445,6 +473,26 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
           </div>
         </div>
       </div>
+
+      {/* What these numbers leave out. An exclusion nobody can see would be
+          worse than the distortion it removes. */}
+      {provisionalCount > 0 && (
+        <div className="bg-white border border-amber-200 rounded-2xl px-5 py-3.5 shadow-sm flex items-start gap-3">
+          <div className="w-8 h-8 rounded-lg bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600 shrink-0">
+            <AlertTriangle className="w-4 h-4" />
+          </div>
+          <p className="text-xs text-slate-600 leading-relaxed">
+            <strong className="text-slate-900">
+              {provisionalCount} {provisionalCount === 1 ? 'observation is' : 'observations are'}{' '}
+              provisional
+            </strong>{' '}
+            — fewer than {Math.round(COVERAGE_FLOOR * 100)}% of the framework was rated, so{' '}
+            {provisionalCount === 1 ? 'it is' : 'they are'} left out of the grade distribution,
+            the average, the rankings and the progression count. Individual indicator ratings from{' '}
+            {provisionalCount === 1 ? 'it' : 'them'} still count toward the domain averages.
+          </p>
+        </div>
+      )}
 
       {/* Interactive Charts Section with Tabs */}
       <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">

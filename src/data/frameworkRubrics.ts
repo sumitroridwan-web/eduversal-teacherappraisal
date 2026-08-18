@@ -1295,6 +1295,20 @@ export function getItemsForLevel(level: CareerLevel): AppraisalItem[] {
   return PRIMARY_SECONDARY_F2_ITEMS.filter((item) => item.visibleFrom.includes(level));
 }
 
+/**
+ * How much of the rubric must be rated before a letter grade is published.
+ *
+ * Attainment is measured across rated indicators only, which is the fair way to
+ * score a partial observation - but it also means the denominator moves. Three
+ * indicators rated at Distinguished is 100%, and without a floor that reads as
+ * a Grade A earned across the whole framework.
+ *
+ * Below the floor the result is reported as provisional, with the scope stated,
+ * instead of as a grade. 0.6 is a policy number rather than a finding: change it
+ * here, in one place, when the appraisal team settles on its own threshold.
+ */
+export const COVERAGE_FLOOR = 0.6;
+
 // Calculate Section and Total Scores
 export function calculateF2Scores(
   level: CareerLevel,
@@ -1341,6 +1355,8 @@ export function calculateF2Scores(
   // Graded from that percentage, using the same bands as calculateF2Predicate.
   // The raw-point scales in LEVEL_SCORING_CONFIGS assume a fully completed
   // sheet, so they cannot grade a partial observation fairly.
+  const coverage = items.length > 0 ? itemsScored / items.length : 0;
+
   const rounded = Math.round(percentage * 10) / 10;
   let grade: 'A' | 'B' | 'C' | 'D' | 'F' = 'F';
   if (rounded >= 86) grade = 'A';
@@ -1364,6 +1380,15 @@ export function calculateF2Scores(
     itemsScored,
     totalItems: items.length,
     isComplete: itemsScored === items.length,
+    /** Share of the level's indicators that carry a rating, 0 to 1. */
+    coverage,
+    /**
+     * True when too little of the rubric was rated for the grade to stand as a
+     * judgement about the lesson. The letter is still returned - callers need
+     * it for colour and for the appraiser's own working - but it must not be
+     * published, ranked or averaged without saying what it rests on.
+     */
+    provisional: coverage < COVERAGE_FLOOR,
   };
 }
 

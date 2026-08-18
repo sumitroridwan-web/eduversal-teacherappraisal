@@ -28,6 +28,8 @@ export interface ObservationSummary {
   percentage: number;
   grade: string;
   predicate: string;
+  /** True where too little of the framework was rated for the grade to stand. */
+  provisional: boolean;
   ratedCount: number;
   notObservableCount: number;
   /** The Glow / Grow / Go debrief actually agreed with the teacher. */
@@ -44,6 +46,10 @@ export interface SchoolReportData {
   scopeLine: string;
   totalObservations: number;
   averagePercentage: number;
+  /** Observations behind averagePercentage and gradeDistribution. */
+  gradedObservations: number;
+  /** Observations set aside from those figures for want of coverage. */
+  provisionalObservations: number;
   gradeDistribution: Record<string, number>;
   domainAverages: Array<{ domain: string; score: number; rated: number }>;
   observations: ObservationSummary[];
@@ -100,14 +106,24 @@ export function buildSchoolReport(
 
   let percentageSum = 0;
   let totalNotObservable = 0;
+  let gradedCount = 0;
+  let provisionalCount = 0;
 
   const observations: ObservationSummary[] = scoped.map((record) => {
     const stats = calculateF2Scores(record.careerLevel, record.scores);
     const band = calculateF2Predicate(stats.percentage);
     const items = getItemsForLevel(record.careerLevel);
 
-    gradeDistribution[stats.grade] = (gradeDistribution[stats.grade] || 0) + 1;
-    percentageSum += stats.percentage;
+    // A cohort grade profile only means something where each observation rated
+    // a comparable share of the framework. Provisional ones are counted and
+    // named in the report rather than folded into the distribution.
+    if (stats.provisional) {
+      provisionalCount++;
+    } else {
+      gradedCount++;
+      gradeDistribution[stats.grade] = (gradeDistribution[stats.grade] || 0) + 1;
+      percentageSum += stats.percentage;
+    }
 
     let ratedCount = 0;
     let notObservable = 0;
@@ -168,6 +184,7 @@ export function buildSchoolReport(
       percentage: stats.percentage,
       grade: stats.grade,
       predicate: band.predicate,
+      provisional: stats.provisional,
       ratedCount,
       notObservableCount: notObservable,
       // Reported as the debrief the teacher received. Where a column is empty,
@@ -217,9 +234,9 @@ export function buildSchoolReport(
     filters,
     scopeLine: describeScope(filters),
     totalObservations: observations.length,
-    averagePercentage: observations.length
-      ? Math.round((percentageSum / observations.length) * 10) / 10
-      : 0,
+    averagePercentage: gradedCount ? Math.round((percentageSum / gradedCount) * 10) / 10 : 0,
+    gradedObservations: gradedCount,
+    provisionalObservations: provisionalCount,
     gradeDistribution,
     domainAverages,
     observations,
@@ -375,8 +392,8 @@ export function generateSchoolReportPdf(
     body('No observations match the selected filters, so no findings can be reported.');
   } else {
     body(
-      `Average Framework 2 attainment across the ${data.totalObservations} observation${
-        data.totalObservations === 1 ? '' : 's'
+      `Average Framework 2 attainment across the ${data.gradedObservations} graded observation${
+        data.gradedObservations === 1 ? '' : 's'
       } in scope is ${data.averagePercentage}%. Grades awarded: ` +
         Object.entries(data.gradeDistribution)
           .filter(([, n]) => n > 0)
@@ -384,6 +401,15 @@ export function generateSchoolReportPdf(
           .join(', ') +
         '.'
     );
+    if (data.provisionalObservations > 0) {
+      body(
+        `${data.provisionalObservations} further observation${
+          data.provisionalObservations === 1 ? '' : 's'
+        } rated too little of the framework to carry a grade and ${
+          data.provisionalObservations === 1 ? 'is' : 'are'
+        } reported as provisional. They are listed below but are excluded from the average and the grade profile, so a brief visit cannot read as a cohort result.`
+      );
+    }
     if (data.totalNotObservable > 0) {
       body(
         `${data.totalNotObservable} indicator ratings across the cohort were recorded as not observable - the captured evidence did not speak to them. These are excluded from attainment rather than counted as failures.`

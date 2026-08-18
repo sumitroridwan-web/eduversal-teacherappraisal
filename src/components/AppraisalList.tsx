@@ -184,21 +184,29 @@ export const AppraisalList: React.FC<AppraisalListProps> = ({
                     </p>
                   </div>
 
-                  {/* Indicative Grade Badge */}
+                  {/* Indicative Grade Badge, or the scope where too little of
+                      the rubric was rated for a grade to stand. */}
                   <div
-                    className={`w-11 h-11 rounded-xl flex items-center justify-center font-black text-lg border shrink-0 shadow-2xs ${
-                      s.grade === 'A'
-                        ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                    title={
+                      s.provisional
+                        ? `Provisional - ${s.itemsScored} of ${s.totalItems} indicators rated`
+                        : undefined
+                    }
+                    className={`w-11 h-11 rounded-xl flex items-center justify-center font-black border shrink-0 shadow-2xs ${
+                      s.provisional
+                        ? 'bg-slate-50 text-slate-400 border-slate-200 text-[9px] uppercase tracking-wider leading-tight'
+                        : s.grade === 'A'
+                        ? 'bg-emerald-50 text-emerald-600 border-emerald-200 text-lg'
                         : s.grade === 'B'
-                        ? 'bg-indigo-50 text-indigo-600 border-indigo-200'
+                        ? 'bg-indigo-50 text-indigo-600 border-indigo-200 text-lg'
                         : s.grade === 'C'
-                        ? 'bg-amber-50 text-amber-600 border-amber-200'
+                        ? 'bg-amber-50 text-amber-600 border-amber-200 text-lg'
                         : s.grade === 'D'
-                        ? 'bg-orange-50 text-orange-600 border-orange-200'
-                        : 'bg-rose-50 text-rose-600 border-rose-200'
+                        ? 'bg-orange-50 text-orange-600 border-orange-200 text-lg'
+                        : 'bg-rose-50 text-rose-600 border-rose-200 text-lg'
                     }`}
                   >
-                    {s.grade}
+                    {s.provisional ? 'N/A' : s.grade}
                   </div>
                 </div>
 

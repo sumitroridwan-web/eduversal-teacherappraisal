@@ -21,6 +21,53 @@ View your app in AI Studio: https://ai.studio/apps/8273535e-1980-4c48-b860-4f317
    - `APP_SESSION_SECRET` — optional; `openssl rand -hex 32`
 3. Run the app:
    `npm run dev`
+4. Run the tests:
+   `npm test`
+
+## Scoring: what a grade is allowed to claim
+
+Attainment is measured across the indicators that were actually rated, not
+across the whole rubric. Unrated means "not evidenced", never "scored zero", so
+a short visit that evidenced 20 of 44 indicators at Distinguished is not
+recorded as 45%.
+
+That fair denominator also moves, which is what
+[`COVERAGE_FLOOR`](src/data/frameworkRubrics.ts) exists to bound:
+
+- Below 60% of the level's indicators, no letter grade is published. The
+  observation is reported as **provisional**, with the scope stated, on the
+  sheet, the portfolio card and the report.
+- Provisional observations are excluded from the grade distribution, the
+  averages, the rankings and the progression count — and the dashboard says how
+  many were excluded rather than dropping them silently. Their individual
+  indicator ratings still count toward domain averages, whose denominator does
+  not move.
+- 60% is a policy number, not a finding. Change it in one place.
+
+There is deliberately no bulk-fill action on the observation sheet. An indicator
+nobody observed stays unrated.
+
+## Auto-grading
+
+- Grading samples at **temperature 0**, so re-grading the same evidence returns
+  the same ratings. Anything else makes an agreement study measure noise.
+- Every rating the model returns is checked against the evidence actually
+  submitted ([citationCheck.ts](citationCheck.ts)). A rating whose citation
+  cannot be located is withdrawn to *not observable* rather than published, and
+  the appraiser is told how many were withdrawn.
+- Suggestions land as `origin: 'ai-suggested'` and stay marked that way until an
+  appraiser confirms them as their own judgement.
+
+## Measuring agreement
+
+`tools/` holds the tooling for a double-coded gold set: how far two appraisers
+sit apart, and how far the grader sits from both. Read
+[tools/GOLD-SET.md](tools/GOLD-SET.md) for the protocol, then:
+
+```
+npm run agreement -- --template Proficient > goldset.json   # blank rating sheet
+npm run agreement -- tools/example-goldset.json             # worked example
+```
 
 ## Access Password
 

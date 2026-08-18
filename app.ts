@@ -16,6 +16,7 @@ import {
   deleteRecord,
   describeConfiguration,
 } from "./firestore.js";
+import { verifyCitations } from "./citationCheck.js";
 // Type-only: erased at compile time, so the SDK is not pulled in at module load.
 import type { GoogleGenAI } from "@google/genai";
 
@@ -676,6 +677,13 @@ could not be observed and what further evidence would close that gap.
       model: "gemini-3.7-flash",
       contents: prompt + languageDirective(language),
       config: {
+        // Grading is the one call here whose output becomes a number on
+        // somebody's appraisal. At the model default, re-grading the same
+        // evidence returns different ratings and nothing tells the appraiser
+        // that the number moved. Sampling at zero makes a re-run reproducible,
+        // which is also what lets an agreement study measure the grader rather
+        // than the noise around it.
+        temperature: 0,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -734,7 +742,27 @@ could not be observed and what further evidence would close that gap.
     });
 
     const parsed = JSON.parse(response.text || "{}");
-    return res.json({ success: true, data: parsed });
+
+    // The prompt requires every rating to cite evidence and forbids a rating it
+    // cannot cite. Requiring is not enforcing, so the citations are checked
+    // against the evidence actually submitted before the scores leave here.
+    const verification = verifyCitations(parsed.scores, {
+      activities,
+      observerNotes,
+      transcript,
+      photos,
+      classroomConditions,
+      learningObjectives,
+    });
+
+    return res.json({
+      success: true,
+      data: { ...parsed, scores: verification.scores },
+      citationCheck: {
+        checked: verification.checked,
+        withdrawn: verification.withdrawn,
+      },
+    });
   } catch (error: any) {
     console.error("Auto-Grade API Error:", error);
     return res.status(500).json({ error: error.message || "Failed to auto-grade lesson with Gemini AI." });
