@@ -9,7 +9,7 @@
     "start": "NODE_ENV=production node build/server.cjs",
     "clean": "rm -rf dist build server.js",
     "lint": "tsc --noEmit",
-    "test": "node --import tsx --test tests/*.test.ts",
+    "test": "node --import tsx --test tests/*.test.ts tests/*.test.tsx",
     "agreement": "tsx tools/agreement.ts"
   },
   "dependencies": {

@@ -15,6 +15,7 @@ import {
   RotateCcw,
   BookOpen,
   School,
+  CalendarPlus,
 } from 'lucide-react';
 import { TeacherAppraisalRecord, CareerLevel, SchoolLevel, SubjectCategory, EDUVERSAL_SCHOOLS } from '../types';
 import { calculateF2Scores } from '../data/frameworkRubrics';
@@ -24,6 +25,8 @@ interface AppraisalListProps {
   onSelectAppraisal: (appraisal: TeacherAppraisalRecord) => void;
   onNewAppraisal: () => void;
   onDeleteAppraisal: (id: string) => void;
+  /** Starts the next observation of the same teacher, carrying the posting over. */
+  onNewFollowUp?: (appraisal: TeacherAppraisalRecord) => void;
   onViewReport: (appraisal: TeacherAppraisalRecord) => void;
   onOpenRubrics: (level: CareerLevel) => void;
 }
@@ -33,6 +36,7 @@ export const AppraisalList: React.FC<AppraisalListProps> = ({
   onSelectAppraisal,
   onNewAppraisal,
   onDeleteAppraisal,
+  onNewFollowUp,
   onViewReport,
   onOpenRubrics,
 }) => {
@@ -261,6 +265,20 @@ export const AppraisalList: React.FC<AppraisalListProps> = ({
                 </button>
 
                 <div className="flex items-center gap-2">
+                  {onNewFollowUp && (
+                    <button
+                      type="button"
+                      onClick={() => onNewFollowUp(appraisal)}
+                      title={`Start a new observation of ${
+                        appraisal.teacherName || 'this teacher'
+                      }, carrying over the class and subject`}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold transition cursor-pointer"
+                    >
+                      <CalendarPlus className="w-3.5 h-3.5 text-teal-600" />
+                      <span className="hidden sm:inline">Observe again</span>
+                    </button>
+                  )}
+
                   <button
                     type="button"
                     onClick={() => onViewReport(appraisal)}

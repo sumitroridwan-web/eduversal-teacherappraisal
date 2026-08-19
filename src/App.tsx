@@ -8,6 +8,7 @@ import {
 } from './services/storage';
 import { TeacherAppraisalRecord, CareerLevel } from './types';
 import { flushQueue, pullAndMerge, onSyncConflict, resolveConflict } from './services/sync';
+import { carryContext } from './services/observationSheet';
 import { Navbar } from './components/Navbar';
 import { AppraisalForm } from './components/AppraisalForm';
 import { AppraisalList } from './components/AppraisalList';
@@ -98,6 +99,29 @@ export default function App() {
     }
   };
 
+  /**
+   * Starts the next observation of a teacher already in the portfolio.
+   *
+   * Everything describing the posting is carried over - school, level, subject,
+   * class, appraiser, academic year - and nothing describing the lesson is.
+   * Retyping all of that for each visit is most of the setup an appraiser does,
+   * and it is also where a teacher's name drifts between spellings and their
+   * history quietly splits in two.
+   */
+  const handleNewFollowUp = (previous: TeacherAppraisalRecord) => {
+    const blank = createBlankAppraisal(
+      previous.careerLevel,
+      previous.schoolLevel,
+      previous.subjectCategory,
+      previous.schoolName
+    );
+
+    const saved = saveOrUpdateAppraisal({ ...blank, ...carryContext(previous) });
+    setCurrentAppraisal(saved);
+    setAppraisals(loadAppraisals());
+    setCurrentView('FORM');
+  };
+
   // Handle Create New Appraisal
   const handleNewAppraisal = () => {
     const newBlank = createBlankAppraisal('Proficient');
@@ -174,6 +198,7 @@ export default function App() {
             onSelectAppraisal={handleSelectAppraisal}
             onNewAppraisal={handleNewAppraisal}
             onDeleteAppraisal={handleDeleteAppraisal}
+            onNewFollowUp={handleNewFollowUp}
             onClearAll={handleClearAll}
             onViewReport={handleViewReport}
             onOpenRubrics={handleOpenRubrics}

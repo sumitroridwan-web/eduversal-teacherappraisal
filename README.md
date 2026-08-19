@@ -47,6 +47,31 @@ That fair denominator also moves, which is what
 There is deliberately no bulk-fill action on the observation sheet. An indicator
 nobody observed stays unrated.
 
+## Filling in the observation sheet
+
+Forty-four indicators across a forty-minute lesson is under a minute each, so
+the sheet is built around capture during the lesson and rating afterwards:
+
+- **Capture** — notes, activities, audio and photos. A **Stamp 08:23** button
+  opens a new timestamped line, which is what makes a moment citable later.
+- **Rate** — the rubric, with the lesson notes pinned above it. A part-rated
+  record opens straight here.
+
+In rating mode:
+
+- **Unrated (n)** filters to what still needs a rating; **Next unrated** jumps
+  to it and wraps round to gaps left earlier.
+- Click a card and press **1**–**4** to rate and advance, **Enter** to skip.
+- Each card shows a descriptor *before* you choose — the one under the pointer
+  while choosing, and Proficient as the anchor before that.
+- The progress bar marks the coverage floor: "12 / 44 — 27 needed for a grade".
+- Evidence prompts open a phrase you finish ("Engagement: …") rather than
+  stamping a finished token.
+
+**Observe again** on a portfolio card starts the next observation of the same
+teacher, carrying the school, level, subject, class and appraiser across, and
+nothing about the lesson.
+
 ## Auto-grading
 
 - Grading samples at **temperature 0**, so re-grading the same evidence returns

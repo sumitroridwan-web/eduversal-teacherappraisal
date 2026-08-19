@@ -23,6 +23,12 @@ import {
   School,
   NotebookPen,
   Loader2,
+  Filter,
+  ArrowDownToLine,
+  Keyboard,
+  Timer,
+  PenSquare,
+  ListChecks,
 } from 'lucide-react';
 import {
   TeacherAppraisalRecord,
@@ -58,11 +64,26 @@ import { executeAutoGrade } from '../services/autoGrader';
 import { saveOrUpdateAppraisal } from '../services/storage';
 import { useLanguage } from '../i18n/LanguageContext';
 import {
+  isRated,
+  visibleItems,
+  findNextUnrated,
+  stampTime,
+  clockTime,
+  appendEvidenceStem,
+  coverageProgress,
+} from '../services/observationSheet';
+import {
   generateGlowGrowGo,
   capFeedback,
   MAX_FEEDBACK_ITEMS,
   DEFAULT_FEEDBACK_ITEMS,
 } from '../services/glowGrowGo';
+
+/**
+ * Openings for an evidence note, chosen because each one demands a specific
+ * observation to finish it.
+ */
+const EVIDENCE_PROMPTS = ['Engagement', 'Misconception', 'Academic language'] as const;
 
 interface AppraisalFormProps {
   initialRecord: TeacherAppraisalRecord;
@@ -80,6 +101,28 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
   const { t, language } = useLanguage();
   const [record, setRecord] = useState<TeacherAppraisalRecord>(initialRecord);
   const [activeSection, setActiveSection] = useState<'ALL' | 'A' | 'B' | 'C' | 'FEEDBACK'>('ALL');
+
+  /**
+   * Capture during the lesson, rate afterwards.
+   *
+   * Forty-four indicators across a forty-minute lesson is under a minute each,
+   * to read the descriptors, decide, rate and write the evidence, while also
+   * watching the room. Nobody does that, so the sheet stops pretending: during
+   * the lesson it shows the things you can actually use at the back of a
+   * classroom, and the rubric comes out afterwards with the notes alongside it.
+   *
+   * A part-rated record opens straight into rating, because that is somebody
+   * coming back to finish.
+   */
+  const [mode, setMode] = useState<'CAPTURE' | 'RATE'>(() =>
+    Object.values(initialRecord.scores || {}).some((entry: any) => typeof entry?.score === 'number')
+      ? 'RATE'
+      : 'CAPTURE'
+  );
+  const [unratedOnly, setUnratedOnly] = useState<boolean>(false);
+  const [showNotesPanel, setShowNotesPanel] = useState<boolean>(true);
+  /** Descriptor shown while a rating button is hovered, before it is clicked. */
+  const [previewDescriptor, setPreviewDescriptor] = useState<{ itemId: string; score: 1 | 2 | 3 | 4 } | null>(null);
   const [expandedRubricId, setExpandedRubricId] = useState<string | null>(null);
   const [showAiModal, setShowAiModal] = useState<boolean>(false);
   const [savedSuccessAlert, setSavedSuccessAlert] = useState<boolean>(false);
@@ -202,6 +245,9 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
           : prev.feedback,
       };
     });
+    // Suggestions have just landed on indicators the appraiser cannot see from
+    // the capture surface, and every one of them needs confirming.
+    setMode('RATE');
     setSavedSuccessAlert(true);
     setTimeout(() => setSavedSuccessAlert(false), 4000);
   };
@@ -252,6 +298,39 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
         },
       };
     });
+  };
+
+  /** Grows an evidence box to fit what was written, so nothing scrolls out of sight. */
+  const autoGrow = (element: HTMLTextAreaElement) => {
+    element.style.height = 'auto';
+    element.style.height = `${element.scrollHeight}px`;
+  };
+
+  /** Puts the cursor at the end of an evidence note just extended by a button. */
+  const focusNotes = (itemId: string) => {
+    requestAnimationFrame(() => {
+      const field = document.getElementById(`notes-input-${itemId}`) as HTMLTextAreaElement | null;
+      if (!field) return;
+      field.focus();
+      field.setSelectionRange(field.value.length, field.value.length);
+      autoGrow(field);
+    });
+  };
+
+  /** Sets a rating outright, for the keyboard path where a toggle would surprise. */
+  const setScoreExplicitly = (itemId: string, score: 1 | 2 | 3 | 4) => {
+    setRecord((prev) => ({
+      ...prev,
+      scores: {
+        ...prev.scores,
+        [itemId]: {
+          ...(prev.scores[itemId] || { score: null, notes: '' }),
+          score,
+          origin: 'observer',
+          confirmedAt: new Date().toISOString(),
+        },
+      },
+    }));
   };
 
   const handleUpdateEvidenceSource = (itemId: string, evidenceSource: EvidenceSource) => {
@@ -468,11 +547,57 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
     }));
   };
 
-  // Filter items by section
-  const displayedItems = currentItems.filter((item) => {
-    if (activeSection === 'ALL') return true;
-    return item.section === activeSection;
-  });
+  // Filter items by section and by whether they still need a rating
+  const displayedItems = visibleItems(currentItems, record.scores, activeSection, unratedOnly);
+
+  const progress = coverageProgress(stats.itemsScored, stats.totalItems, COVERAGE_FLOOR);
+  const unratedCount = currentItems.filter((item) => !isRated(record.scores, item.id)).length;
+
+  /**
+   * Moves to the next indicator still needing a rating and puts the keyboard on
+   * it, so 1-4 rates it without reaching for the mouse.
+   */
+  const goToNextUnrated = (afterId?: string) => {
+    const next = findNextUnrated(currentItems, record.scores, afterId);
+    if (!next) return;
+
+    // The card may be filtered out of view - a section tab, or unrated-only
+    // hiding the one just rated. Land on the tab that contains it.
+    if (activeSection !== 'ALL' && activeSection !== next.section) setActiveSection('ALL');
+
+    requestAnimationFrame(() => {
+      const card = document.getElementById(`item-card-${next.id}`);
+      if (!card) return;
+      card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      card.focus({ preventScroll: true });
+    });
+  };
+
+  /**
+   * Rating from the keyboard: 1-4 rates the focused indicator and moves on,
+   * Enter skips to the next one still needing a rating.
+   */
+  const handleCardKeyDown = (event: React.KeyboardEvent<HTMLDivElement>, itemId: string) => {
+    // Typing evidence must never rate anything.
+    const target = event.target as HTMLElement;
+    if (target !== event.currentTarget) return;
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+    if (event.key >= '1' && event.key <= '4') {
+      event.preventDefault();
+      const score = Number(event.key) as 1 | 2 | 3 | 4;
+      // Deliberately not the toggle handleSetScore does: pressing 3 twice while
+      // working down the sheet should leave a 3, not silently clear it.
+      setScoreExplicitly(itemId, score);
+      goToNextUnrated(itemId);
+      return;
+    }
+
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      goToNextUnrated(itemId);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -787,6 +912,55 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
         </div>
       </div>
 
+      {/* Capture / Rate switch. The two halves of an observation are different
+          jobs done at different moments, and showing both at once is what made
+          the sheet feel like forty-four things to do during the lesson. */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-2 shadow-sm flex flex-col sm:flex-row sm:items-center gap-2">
+        <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200 flex-1">
+          <button
+            type="button"
+            onClick={() => setMode('CAPTURE')}
+            className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-xs font-bold transition cursor-pointer min-h-[42px] ${
+              mode === 'CAPTURE'
+                ? 'bg-white text-indigo-700 shadow-sm border border-indigo-200'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <PenSquare className="w-4 h-4 shrink-0" />
+            <span>1 · Capture the lesson</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode('RATE')}
+            className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-xs font-bold transition cursor-pointer min-h-[42px] ${
+              mode === 'RATE'
+                ? 'bg-white text-indigo-700 shadow-sm border border-indigo-200'
+                : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <ListChecks className="w-4 h-4 shrink-0" />
+            <span>
+              2 · Rate the indicators
+              <span className="ml-1.5 font-mono font-normal text-[11px] text-slate-500">
+                {stats.itemsScored}/{stats.totalItems}
+              </span>
+            </span>
+          </button>
+        </div>
+
+        <p className="text-[11px] text-slate-500 px-2 sm:px-3 sm:max-w-[19rem] leading-snug">
+          {mode === 'CAPTURE'
+            ? 'Write what you see. The rubric comes out afterwards, with these notes beside it.'
+            : progress.meetsFloor
+            ? 'Enough of the framework is rated for a grade to publish.'
+            : `${progress.remaining} more ${
+                progress.remaining === 1 ? 'rating' : 'ratings'
+              } before a grade can publish.`}
+        </p>
+      </div>
+
+      {mode === 'CAPTURE' && (
+      <>
       {/* Appraiser's Own Lesson Notes & Score-From-Notes Action */}
       <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm text-slate-800 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-4 border-b border-slate-100">
@@ -844,6 +1018,37 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
           className="w-full bg-white text-slate-900 text-xs sm:text-sm p-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y shadow-2xs leading-relaxed"
         />
 
+        {/* One tap to open a new stamped line. A moment with a time on it can be
+            found again by the teacher, by the report and by the auto-grader;
+            the same moment without one is a claim about the lesson in general. */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setRecord((prev) => ({
+                ...prev,
+                generalObserverNotes: stampTime(prev.generalObserverNotes || ''),
+              }));
+              requestAnimationFrame(() => {
+                const field = document.getElementById(
+                  'textarea-observer-notes'
+                ) as HTMLTextAreaElement | null;
+                if (!field) return;
+                field.focus();
+                field.setSelectionRange(field.value.length, field.value.length);
+                field.scrollTop = field.scrollHeight;
+              });
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg border border-slate-200 transition cursor-pointer"
+          >
+            <Timer className="w-3.5 h-3.5 shrink-0" />
+            <span>Stamp {clockTime()}</span>
+          </button>
+          <span className="text-[11px] text-slate-400">
+            Starts a new line at the current time.
+          </span>
+        </div>
+
         {/* Stated plainly: the button grades from whatever was captured, and
             what it produces is a suggestion until the appraiser confirms it. */}
         <p className="text-[11px] text-slate-500 leading-relaxed">
@@ -889,6 +1094,11 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
         onChange={(photos) => setRecord((prev) => ({ ...prev, photos }))}
       />
 
+      </>
+      )}
+
+      {mode === 'RATE' && (
+      <>
       {/* Live F2 Score Summary Card */}
       <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm text-slate-800">
         <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
@@ -974,16 +1184,36 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
 
         {/* Completion Progress Bar & Score Tools */}
         <div className="mt-4 pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 text-xs text-slate-500">
-          <div className="flex items-center gap-2 flex-1">
+          {/* Progress against the coverage floor, not against the whole rubric.
+              The number that matters to an appraiser mid-sheet is how many more
+              ratings a grade needs, and meeting the floor at the report stage is
+              far too late to learn it. */}
+          <div className="flex items-center gap-2 flex-1 min-w-0">
             <span className="shrink-0 font-medium">Progress:</span>
-            <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+            <div className="flex-1 h-2.5 bg-slate-100 rounded-full relative min-w-[80px]">
               <div
-                style={{ width: `${(stats.itemsScored / (stats.totalItems || 1)) * 100}%` }}
-                className="h-full bg-indigo-600 transition-all duration-300"
+                style={{ width: `${progress.ratedPercent}%` }}
+                className={`h-full rounded-full transition-all duration-300 ${
+                  progress.meetsFloor ? 'bg-emerald-600' : 'bg-indigo-600'
+                }`}
+              />
+              <div
+                style={{ left: `${progress.floorPercent}%` }}
+                title={`${progress.needed} of ${progress.total} indicators needed before a grade is published`}
+                className="absolute -top-1 bottom-[-4px] w-0.5 bg-slate-500/70 rounded-full"
               />
             </div>
-            <span className="font-mono text-slate-800 font-semibold text-[11px] shrink-0">
+            <span className="font-mono text-slate-800 font-semibold text-[11px] shrink-0 tabular-nums">
               {stats.itemsScored}/{stats.totalItems}
+            </span>
+            <span
+              className={`text-[11px] shrink-0 font-medium hidden sm:inline ${
+                progress.meetsFloor ? 'text-emerald-700' : 'text-amber-700'
+              }`}
+            >
+              {progress.meetsFloor
+                ? 'grade will publish'
+                : `${progress.needed} needed for a grade`}
             </span>
           </div>
 
@@ -1058,21 +1288,104 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
           </button>
         </div>
 
-        {record.aiAnalysis && (
+        <div className="flex items-center gap-2 shrink-0 overflow-x-auto no-scrollbar">
+          {/* "Which ones do I still need?" is the question an appraiser asks
+              most often on this screen, and the sheet could not answer it. */}
+          {activeSection !== 'FEEDBACK' && (
+            <>
+              <button
+                type="button"
+                onClick={() => setUnratedOnly((prev) => !prev)}
+                title="Show only the indicators that still need a rating"
+                className={`flex items-center justify-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border transition cursor-pointer font-semibold shrink-0 ${
+                  unratedOnly
+                    ? 'bg-amber-500 text-white border-amber-500 shadow-xs'
+                    : 'text-slate-700 bg-white hover:bg-slate-50 border-slate-200'
+                }`}
+              >
+                <Filter className="w-3.5 h-3.5 shrink-0" />
+                <span>Unrated ({unratedCount})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => goToNextUnrated()}
+                disabled={unratedCount === 0}
+                title="Jump to the next indicator needing a rating"
+                className="flex items-center justify-center gap-1.5 text-xs text-slate-700 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed border border-slate-200 px-3 py-1.5 rounded-xl transition cursor-pointer font-semibold shrink-0"
+              >
+                <ArrowDownToLine className="w-3.5 h-3.5 shrink-0" />
+                <span>Next unrated</span>
+              </button>
+            </>
+          )}
+
+          {record.aiAnalysis && (
+            <button
+              type="button"
+              onClick={() => setShowAiModal(true)}
+              className="flex items-center justify-center gap-1.5 text-xs text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-1.5 rounded-xl transition cursor-pointer font-semibold shrink-0"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+              <span>View AI Insights</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* The notes taken during the lesson, kept beside the rubric rather than
+          a screen away. Rating happens after the lesson, from these. */}
+      {activeSection !== 'FEEDBACK' && record.generalObserverNotes?.trim() && (
+        <div className="sticky top-2 z-30 bg-white/95 backdrop-blur-md border border-indigo-200 rounded-2xl shadow-sm">
           <button
             type="button"
-            onClick={() => setShowAiModal(true)}
-            className="flex items-center justify-center gap-1.5 text-xs text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-3 py-1.5 rounded-xl transition cursor-pointer font-semibold shrink-0"
+            onClick={() => setShowNotesPanel((prev) => !prev)}
+            className="w-full flex items-center justify-between gap-3 px-4 py-2.5 cursor-pointer"
           >
-            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-            <span>View AI Insights</span>
+            <span className="flex items-center gap-2 text-xs font-bold text-indigo-800">
+              <NotebookPen className="w-4 h-4 shrink-0" />
+              Your lesson notes
+            </span>
+            {showNotesPanel ? (
+              <ChevronUp className="w-4 h-4 text-slate-400 shrink-0" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+            )}
           </button>
-        )}
-      </div>
+          {showNotesPanel && (
+            <div className="px-4 pb-3 max-h-44 overflow-y-auto">
+              <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">
+                {record.generalObserverNotes}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Observation Items Sheet */}
       {activeSection !== 'FEEDBACK' ? (
         <div className="space-y-4">
+          {/* Keyboard rating. Twenty-seven ratings by trackpad is the bulk of
+              the work, and the keys let an appraiser keep their eyes up. */}
+          <div className="flex items-center gap-2 text-[11px] text-slate-500 px-1">
+            <Keyboard className="w-3.5 h-3.5 shrink-0 text-slate-400" />
+            <span>
+              Click an indicator card, then press{' '}
+              <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono text-[10px]">
+                1
+              </kbd>
+              –
+              <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono text-[10px]">
+                4
+              </kbd>{' '}
+              to rate it and move to the next unrated, or{' '}
+              <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono text-[10px]">
+                Enter
+              </kbd>{' '}
+              to skip.
+            </span>
+          </div>
+
           {displayedItems.map((item) => {
             const currentScoreRecord = record.scores[item.id] || { score: null, notes: '' };
             const isRubricExpanded = expandedRubricId === item.id;
@@ -1082,7 +1395,15 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
               <div
                 key={item.id}
                 id={`item-card-${item.id}`}
-                className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm transition hover:border-slate-300 text-slate-800"
+                tabIndex={0}
+                role="group"
+                aria-label={`${item.id} ${item.title}`}
+                onKeyDown={(e) => handleCardKeyDown(e, item.id)}
+                className={`bg-white border rounded-2xl p-5 shadow-sm transition text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-400 ${
+                  activeScore === null
+                    ? 'border-slate-200 hover:border-slate-300'
+                    : 'border-slate-200 hover:border-slate-300'
+                }`}
               >
                 <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
                   {/* Left: Item Details */}
@@ -1127,15 +1448,40 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
                       Coaching Focus: {item.coachingFocus}
                     </div>
 
-                    {/* Active Descriptor Preview */}
-                    {activeScore && (
-                      <div className="mt-2 p-2.5 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-700">
-                        <span className="font-semibold text-slate-900">
-                          Rating {activeScore} Descriptor:{' '}
-                        </span>
-                        {item.descriptors[activeScore]}
-                      </div>
-                    )}
+                    {/* Descriptor Preview.
+                        Previously this appeared only once a rating had been
+                        chosen, so an appraiser committed first and read the
+                        descriptor afterwards. Now it is always showing: the
+                        one under the pointer while choosing, the chosen one
+                        after, and Proficient as the anchor before either -
+                        3 being the standard the rubric is written around. */}
+                    {(() => {
+                      const previewing =
+                        previewDescriptor?.itemId === item.id ? previewDescriptor.score : null;
+                      const shown = previewing || activeScore || 3;
+                      const isAnchor = !previewing && !activeScore;
+
+                      return (
+                        <div
+                          className={`mt-2 p-2.5 rounded-xl border text-xs transition ${
+                            isAnchor
+                              ? 'bg-slate-50/60 border-slate-200 text-slate-500'
+                              : 'bg-slate-50 border-slate-200 text-slate-700'
+                          }`}
+                        >
+                          <span
+                            className={`font-semibold ${
+                              isAnchor ? 'text-slate-600' : 'text-slate-900'
+                            }`}
+                          >
+                            {isAnchor
+                              ? 'Standard (3) reads: '
+                              : `Rating ${shown} Descriptor: `}
+                          </span>
+                          {item.descriptors[shown]}
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* Right: 4-Point Rating Buttons & Rubric Toggle */}
@@ -1156,6 +1502,10 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
                             id={`btn-score-${item.id}-${sc}`}
                             type="button"
                             onClick={() => handleSetScore(item.id, sc)}
+                            onMouseEnter={() => setPreviewDescriptor({ itemId: item.id, score: sc })}
+                            onMouseLeave={() => setPreviewDescriptor(null)}
+                            onFocus={() => setPreviewDescriptor({ itemId: item.id, score: sc })}
+                            onBlur={() => setPreviewDescriptor(null)}
                             className={`h-11 sm:h-10 sm:w-11 rounded-lg text-xs font-semibold transition flex flex-col items-center justify-center cursor-pointer min-w-[44px] ${btnStyle}`}
                             title={`Rate ${sc} - ${
                               sc === 4
@@ -1256,13 +1606,21 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
                 {/* Evidence & Appraiser Notes Field */}
                 <div className="mt-3 pt-3 border-t border-slate-100 flex flex-col sm:flex-row gap-3">
                   <div className="flex-1">
-                    <input
+                    {/* Evidence is a sentence, not a phrase. This was a
+                        single-line input that scrolled sideways, which quietly
+                        taught appraisers to write three words or nothing - and
+                        three words is what leaves an indicator uncitable. */}
+                    <textarea
                       id={`notes-input-${item.id}`}
-                      type="text"
                       value={currentScoreRecord.notes}
-                      onChange={(e) => handleUpdateNotes(item.id, e.target.value)}
-                      placeholder={`Observable evidence and appraiser notes for ${item.id}...`}
-                      className="w-full bg-white text-slate-900 text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs"
+                      onChange={(e) => {
+                        handleUpdateNotes(item.id, e.target.value);
+                        autoGrow(e.target);
+                      }}
+                      ref={(el) => el && autoGrow(el)}
+                      rows={2}
+                      placeholder={`What you saw that evidences ${item.id} — quote it if you can.`}
+                      className="w-full bg-white text-slate-900 text-xs px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs resize-y leading-relaxed min-h-[3.25rem]"
                     />
 
                     <div className="flex items-center gap-2 mt-1.5">
@@ -1285,44 +1643,43 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
                     </div>
                   </div>
 
-                  {/* Quick Evidence Tags */}
-                  <div className="flex items-center gap-1.5">
+                  {/* Evidence prompts and a time stamp.
+                      These buttons used to append finished tokens - "[High
+                      Engagement]" - which read as evidence while stating
+                      nothing, and nothing downstream could tell that from an
+                      observation. They now open a phrase the appraiser
+                      finishes in their own words. */}
+                  <div className="flex sm:flex-col items-stretch gap-1.5 shrink-0">
                     <button
                       type="button"
-                      onClick={() =>
-                        handleUpdateNotes(
-                          item.id,
-                          (currentScoreRecord.notes ? currentScoreRecord.notes + ' ' : '') + '[High Engagement]'
-                        )
-                      }
-                      className="text-[10px] text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-2 py-1.5 rounded-lg border border-slate-200 transition cursor-pointer"
+                      onClick={() => {
+                        handleUpdateNotes(item.id, stampTime(currentScoreRecord.notes));
+                        focusNotes(item.id);
+                      }}
+                      title="Stamp the current time on a new line"
+                      className="flex items-center justify-center gap-1 text-[10px] text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-2 py-1.5 rounded-lg border border-slate-200 transition cursor-pointer whitespace-nowrap"
                     >
-                      + Engagement
+                      <Timer className="w-3 h-3 shrink-0" />
+                      {clockTime()}
                     </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleUpdateNotes(
-                          item.id,
-                          (currentScoreRecord.notes ? currentScoreRecord.notes + ' ' : '') + '[Misconception Addressed]'
-                        )
-                      }
-                      className="text-[10px] text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-2 py-1.5 rounded-lg border border-slate-200 transition cursor-pointer"
-                    >
-                      + Misconception
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleUpdateNotes(
-                          item.id,
-                          (currentScoreRecord.notes ? currentScoreRecord.notes + ' ' : '') + '[CALP Precision]'
-                        )
-                      }
-                      className="text-[10px] text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-2 py-1.5 rounded-lg border border-slate-200 transition cursor-pointer"
-                    >
-                      + CALP
-                    </button>
+
+                    {EVIDENCE_PROMPTS.map((prompt) => (
+                      <button
+                        key={prompt}
+                        type="button"
+                        onClick={() => {
+                          handleUpdateNotes(
+                            item.id,
+                            appendEvidenceStem(currentScoreRecord.notes, prompt)
+                          );
+                          focusNotes(item.id);
+                        }}
+                        title={`Start an evidence note about ${prompt.toLowerCase()}`}
+                        className="text-[10px] text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-2 py-1.5 rounded-lg border border-slate-200 transition cursor-pointer whitespace-nowrap"
+                      >
+                        {prompt}…
+                      </button>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -1634,6 +1991,8 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
             </div>
           </div>
         </div>
+      )}
+      </>
       )}
 
       {/* Floating Bottom Action Bar */}
