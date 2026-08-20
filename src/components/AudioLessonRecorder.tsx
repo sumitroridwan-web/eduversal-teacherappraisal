@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, Square, Play, Pause, Upload, Sparkles, Volume2, AlertCircle, RefreshCw, Clock, CheckCircle2 } from 'lucide-react';
+import { Mic, Square, Play, Pause, Upload, Sparkles, Volume2, AlertCircle, RefreshCw, Clock, CheckCircle2, FileText, Copy, Trash2 } from 'lucide-react';
 import { AiLessonAnalysis, CareerLevel, TranscriptSegment } from '../types';
 
 /**
@@ -59,6 +59,16 @@ interface AudioLessonRecorderProps {
   observerNotes?: string;
   onAnalysisComplete: (analysis: AiLessonAnalysis, transcriptText?: string, segments?: TranscriptSegment[]) => void;
   existingAnalysis?: AiLessonAnalysis;
+  /** Transcript already held on this teacher's observation, restored on open. */
+  initialTranscript?: string;
+  initialSegments?: TranscriptSegment[];
+  /**
+   * Fires on every change so the transcript is stored against the teacher as
+   * it is spoken. Waiting for the AI analysis meant a closed tab, a refused
+   * upload or an appraiser who never pressed Analyze lost the whole record of
+   * what was said.
+   */
+  onTranscriptChange?: (transcript: string, segments: TranscriptSegment[]) => void;
 }
 
 export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
@@ -71,14 +81,25 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
   observerNotes,
   onAnalysisComplete,
   existingAnalysis,
+  initialTranscript,
+  initialSegments,
+  onTranscriptChange,
 }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [audioBase64, setAudioBase64] = useState<string | null>(null);
-  const [transcript, setTranscript] = useState<string>('');
-  const [segments, setSegments] = useState<TranscriptSegment[]>([]);
+  // Seeded from the stored observation. The parent remounts this component
+  // per record id, so the seeding happens once per teacher rather than on
+  // every keystroke echoed back down from the form.
+  const [transcript, setTranscript] = useState<string>(initialTranscript || '');
+  const [segments, setSegments] = useState<TranscriptSegment[]>(initialSegments || []);
+  // What the engine is still hearing: shown live, never written to the record
+  // until the engine settles on it.
+  const [interimText, setInterimText] = useState('');
+  const [showTranscript, setShowTranscript] = useState(true);
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'blocked'>('idle');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [analysisWarning, setAnalysisWarning] = useState<string | null>(null);
@@ -97,6 +118,22 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
   // segment without being re-created on every tick.
   const recordingTimeRef = useRef(0);
   const finalisedResultsRef = useRef(0);
+  const transcriptRef = useRef<HTMLTextAreaElement | null>(null);
+  /**
+   * Seconds already captured in earlier recordings of this same observation.
+   * A lesson is often taken in several passes - more so now the endpoint only
+   * accepts so much audio at once - and a transcript that restarted at 00:00
+   * each time could not be read, cited or scored as one timeline.
+   */
+  const transcriptOffsetRef = useRef(
+    (initialSegments || []).reduce((latest, seg) => Math.max(latest, seg.startSeconds || 0), 0)
+  );
+  // What the observation was last told the transcript is. Compared rather
+  // than counted, so merely opening a record - or React re-running effects on
+  // mount - cannot report a change that never happened.
+  const lastPublishedRef = useRef(
+    `${(initialSegments || []).length}|${initialTranscript || ''}`
+  );
 
   // Format seconds to mm:ss
   const formatTime = (seconds: number) => {
@@ -181,20 +218,29 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
             // Only append results the engine has finalised, and only ones not
             // already recorded - onresult replays the whole results list each
             // time, which previously duplicated the transcript on every event.
+            let pending = '';
+
             for (let i = finalisedResultsRef.current; i < event.results.length; i++) {
               const result = event.results[i];
-              if (!result.isFinal) continue;
+              if (!result.isFinal) {
+                // Not settled yet: shown under the transcript so the appraiser
+                // can see the capture is still following the room.
+                pending = `${pending} ${String(result[0].transcript)}`.trim();
+                continue;
+              }
 
               const text = String(result[0].transcript).trim();
               finalisedResultsRef.current = i + 1;
               if (!text) continue;
 
-              const at = recordingTimeRef.current;
+              const at = transcriptOffsetRef.current + recordingTimeRef.current;
               const stamp = formatTime(at);
 
               setSegments((prev) => [...prev, { startSeconds: at, timeLabel: stamp, text }]);
               setTranscript((prev) => (prev ? `${prev}\n[${stamp}] ${text}` : `[${stamp}] ${text}`));
             }
+
+            setInterimText(pending);
           };
 
           recognition.start();
@@ -207,7 +253,11 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
       mediaRecorder.start(1000); // 1 sec chunks
       recordingTimeRef.current = 0;
       finalisedResultsRef.current = 0;
-      setSegments([]);
+      // Deliberately keeps whatever is already transcribed: a second pass
+      // continues the lesson's timeline instead of erasing the first. Clear
+      // Transcript is there for starting the record over.
+      setInterimText('');
+      setShowTranscript(true);
       setIsRecording(true);
       setIsPaused(false);
       setRecordingTime(0);
@@ -228,6 +278,8 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
   const stopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
+      transcriptOffsetRef.current += recordingTimeRef.current;
+      setInterimText('');
       setIsRecording(false);
       setIsPaused(false);
       if (timerIntervalRef.current) {
@@ -378,6 +430,52 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
     } finally {
       setIsAnalyzing(false);
     }
+  };
+
+  // Hand every change up to the observation, which autosaves it against this
+  // teacher. Runs for typed corrections too, not only for captured speech.
+  useEffect(() => {
+    const signature = `${segments.length}|${transcript}`;
+    if (signature === lastPublishedRef.current) return;
+    lastPublishedRef.current = signature;
+    onTranscriptChange?.(transcript, segments);
+  }, [transcript, segments]);
+
+  // Keep the newest line in view while the lesson is running, so the panel
+  // reads as a live feed rather than something to scroll after the fact.
+  useEffect(() => {
+    if (!isRecording || !transcriptRef.current) return;
+    transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
+  }, [transcript, interimText, isRecording]);
+
+  const handleCopyTranscript = async () => {
+    const text = transcript.trim();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyState('copied');
+      window.setTimeout(() => setCopyState('idle'), 2000);
+    } catch {
+      // The clipboard API is refused without a user gesture in some browsers
+      // and absent entirely over plain http, so fall back to selecting the
+      // text and let the appraiser press the shortcut.
+      transcriptRef.current?.focus();
+      transcriptRef.current?.select();
+      setCopyState('blocked');
+    }
+  };
+
+  const handleClearTranscript = () => {
+    if (!transcript && segments.length === 0) return;
+    const confirmed = window.confirm(
+      'Clear the transcript for this observation? The captured lines are removed from the teacher\'s record.'
+    );
+    if (!confirmed) return;
+    setTranscript('');
+    setSegments([]);
+    setInterimText('');
+    transcriptOffsetRef.current = 0;
+    setCopyState('idle');
   };
 
   useEffect(() => {
@@ -556,24 +654,103 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
         </div>
       </div>
 
-      {/* Transcript / Dialogue Scratchpad */}
+      {/* Live Transcript - open by default and left open while recording, so
+          the lesson can be read, corrected and copied as it is spoken. */}
       <div className="mt-4 pt-3 border-t border-slate-100">
-        <details className="group">
-          <summary className="text-xs font-medium text-slate-500 hover:text-slate-700 cursor-pointer flex items-center justify-between">
-            <span>Speech Transcript &amp; Classroom Dialogue Scratchpad (Optional)</span>
-            <span className="text-slate-400 group-open:rotate-180 transition-transform">▼</span>
-          </summary>
-          <div className="mt-2">
+        <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setShowTranscript((open) => !open)}
+              className="text-xs font-semibold text-slate-600 hover:text-slate-900 cursor-pointer flex items-center gap-1.5"
+              aria-expanded={showTranscript}
+            >
+              <FileText className="w-3.5 h-3.5 text-slate-400" />
+              <span>Live Transcript &amp; Classroom Dialogue</span>
+              <span className={`text-slate-400 transition-transform ${showTranscript ? 'rotate-180' : ''}`}>▼</span>
+            </button>
+
+            {isRecording && !isPaused && (
+              <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-red-600 bg-red-50 border border-red-100 px-2 py-0.5 rounded-full">
+                <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-ping" />
+                Live
+              </span>
+            )}
+
+            {segments.length > 0 && (
+              <span className="text-[11px] text-slate-500">
+                {segments.length} timestamped {segments.length === 1 ? 'line' : 'lines'}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {copyState === 'copied' && (
+              <span className="text-[11px] font-medium text-emerald-600">Copied to clipboard</span>
+            )}
+            {copyState === 'blocked' && (
+              <span className="text-[11px] font-medium text-amber-600">Selected - press Cmd/Ctrl+C</span>
+            )}
+            <button
+              id="btn-copy-transcript"
+              type="button"
+              onClick={handleCopyTranscript}
+              disabled={!transcript.trim()}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition ${
+                transcript.trim()
+                  ? 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200 cursor-pointer'
+                  : 'bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed'
+              }`}
+              title="Copy the full timestamped transcript"
+            >
+              <Copy className="w-3.5 h-3.5" />
+              <span>Copy</span>
+            </button>
+            <button
+              id="btn-clear-transcript"
+              type="button"
+              onClick={handleClearTranscript}
+              disabled={!transcript.trim() && segments.length === 0}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition ${
+                transcript.trim() || segments.length
+                  ? 'bg-white hover:bg-rose-50 text-slate-600 hover:text-rose-600 border-slate-200 cursor-pointer'
+                  : 'bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed'
+              }`}
+              title="Clear the transcript held for this observation"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Clear</span>
+            </button>
+          </div>
+        </div>
+
+        {showTranscript && (
+          <>
             <textarea
               id="input-audio-transcript"
+              ref={transcriptRef}
               value={transcript}
-              onChange={(e) => setTranscript(e.target.value)}
-              placeholder="Live speech-to-text transcript or paste key lesson dialogue excerpts here to assist Gemini AI analysis..."
-              rows={3}
-              className="w-full bg-slate-50 text-slate-800 text-xs rounded-xl p-3 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition resize-y font-mono"
+              onChange={(e) => {
+                setTranscript(e.target.value);
+                setCopyState('idle');
+              }}
+              placeholder="Speech is transcribed here with a [mm:ss] stamp as the lesson runs. Paste or correct classroom dialogue at any time - it is saved with the observation and cited by the AI analysis."
+              rows={isRecording ? 10 : 6}
+              className="w-full bg-slate-50 text-slate-800 text-xs rounded-xl p-3 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition resize-y font-mono leading-relaxed"
             />
-          </div>
-        </details>
+
+            {interimText && (
+              <p className="mt-1.5 text-[11px] text-slate-400 font-mono truncate">
+                [{formatTime(transcriptOffsetRef.current + recordingTime)}] {interimText}...
+              </p>
+            )}
+
+            <p className="mt-1.5 text-[11px] text-slate-400">
+              Saved to {teacherName ? `${teacherName}'s` : "this teacher's"} observation as it is captured, and
+              carried into the report and the AI analysis.
+            </p>
+          </>
+        )}
       </div>
 
       {/* Oversized-audio notice: the analysis still runs, from the transcript */}

@@ -1068,6 +1068,9 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
 
       {/* Live Audio Recorder & AI Analyzer Widget */}
       <AudioLessonRecorder
+        // Keyed by record so opening another teacher's observation reseeds the
+        // recorder with that teacher's transcript instead of carrying one over.
+        key={record.id}
         teacherName={record.teacherName}
         subject={record.subject}
         careerLevel={record.careerLevel}
@@ -1076,6 +1079,19 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
         learningObjectives={record.learningObjectives}
         observerNotes={record.generalObserverNotes}
         existingAnalysis={record.aiAnalysis}
+        initialTranscript={record.audioTranscription}
+        initialSegments={record.transcriptSegments}
+        onTranscriptChange={(transcriptText, segments) => {
+          // Held on the record as it is spoken: autosave then writes it to
+          // this teacher's observation, so the transcript survives a closed
+          // tab or an analysis that is never run.
+          setRecord((prev) => ({
+            ...prev,
+            audioTranscription: transcriptText,
+            transcriptSegments: segments,
+            hasAudioRecording: prev.hasAudioRecording || segments.length > 0,
+          }));
+        }}
         onAnalysisComplete={(analysis, transcriptText, segments) => {
           setRecord((prev) => ({
             ...prev,

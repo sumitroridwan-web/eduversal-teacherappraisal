@@ -75,6 +75,33 @@ describe('capture mode', () => {
   });
 });
 
+describe('lesson transcript', () => {
+  function withTranscript(): TeacherAppraisalRecord {
+    const record: any = createBlankAppraisal();
+    record.audioTranscription = '[00:12] what do you notice about the graph';
+    record.transcriptSegments = [
+      { startSeconds: 12, timeLabel: '00:12', text: 'what do you notice about the graph' },
+    ];
+    return record as TeacherAppraisalRecord;
+  }
+
+  test('shows the transcript on the sheet rather than behind a disclosure', () => {
+    const html = render(withTranscript());
+    assert.ok(html.includes('Live Transcript'), 'the transcript panel is on the page');
+    assert.ok(!/Scratchpad/.test(html), 'it is no longer a collapsed scratchpad');
+  });
+
+  test('restores the transcript stored against the teacher', () => {
+    const html = render(withTranscript());
+    assert.ok(html.includes('[00:12] what do you notice about the graph'));
+    assert.ok(/1 timestamped line/.test(html), 'and counts what was captured');
+  });
+
+  test('offers a copy control once there is something to copy', () => {
+    assert.ok(render(withTranscript()).includes('btn-copy-transcript'));
+  });
+});
+
 describe('rate mode', () => {
   const html = () => render(withRatings(5));
 
