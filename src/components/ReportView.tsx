@@ -530,37 +530,6 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
           </div>
         )}
 
-        {/* Timestamped Lesson Transcript */}
-        {(record.transcriptSegments?.length || record.audioTranscription) && (
-          <div className="mb-8">
-            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3 pb-1 border-b border-slate-200 flex items-center justify-between">
-              <span>Timestamped Lesson Transcript</span>
-              <span className="text-[10px] text-slate-500 font-normal">
-                {record.transcriptSegments?.length
-                  ? `${record.transcriptSegments.length} captured segments`
-                  : 'Captured audio transcription'}
-              </span>
-            </h3>
-
-            {record.transcriptSegments?.length ? (
-              <div className="space-y-1 text-xs max-h-80 overflow-y-auto pr-1">
-                {record.transcriptSegments.map((seg, i) => (
-                  <div key={i} className="flex gap-2.5">
-                    <span className="font-mono text-[11px] text-indigo-700 font-semibold shrink-0 w-12">
-                      {seg.timeLabel}
-                    </span>
-                    <span className="text-slate-700">{seg.text}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">
-                {record.audioTranscription}
-              </p>
-            )}
-          </div>
-        )}
-
         {/* Structured Lesson Activities & Observation Timeline */}
         {record.activities && record.activities.length > 0 && (
           <div className="mb-8">
