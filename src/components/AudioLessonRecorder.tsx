@@ -2,6 +2,53 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Mic, Square, Play, Pause, Upload, Sparkles, Volume2, AlertCircle, RefreshCw, Clock, CheckCircle2 } from 'lucide-react';
 import { AiLessonAnalysis, CareerLevel, TranscriptSegment } from '../types';
 
+/**
+ * How much base64 audio a single analysis request may carry.
+ *
+ * Vercel refuses any request body over 4.5MB at the edge, before the function
+ * runs, and answers with the plain text "Request Entity Too Large" - which is
+ * what surfaced as "Unexpected token 'R'" when the reply was parsed as JSON.
+ * Base64 inflates audio by a third, so this budget is what the encoded audio
+ * may weigh, leaving room for the transcript and the rest of the envelope.
+ */
+const MAX_AUDIO_BASE64_BYTES = 4_000_000;
+
+/**
+ * Opus at 12 kbps mono stays intelligible for classroom speech and keeps
+ * roughly the first 35 minutes of a lesson inside the budget above. The
+ * browser default is several times higher, which is why a half-hour
+ * observation could not be sent at all.
+ */
+const SPEECH_BITS_PER_SECOND = 12_000;
+
+const formatMegabytes = (bytes: number) => `${(bytes / 1_000_000).toFixed(1)} MB`;
+
+/**
+ * The notice to show when captured audio is past what the endpoint accepts,
+ * or null when it fits. Raised as soon as the audio is captured rather than
+ * on analysis, so the appraiser can re-record while the lesson is still live.
+ */
+const describeOversizedAudio = (base64Length: number): string | null => {
+  if (base64Length <= MAX_AUDIO_BASE64_BYTES) return null;
+  return `This audio weighs ${formatMegabytes(base64Length)} encoded, past the ${formatMegabytes(
+    MAX_AUDIO_BASE64_BYTES
+  )} the analysis endpoint accepts. The lesson will be analysed from the transcript and your notes instead - record in shorter segments to have the audio itself analysed.`;
+};
+
+/**
+ * Reads a reply that may not be JSON at all: the host answers an oversized
+ * upload with plain text and a crashed function with HTML, either of which
+ * used to bury the real cause behind a JSON syntax error.
+ */
+const readJsonResponse = async (res: Response): Promise<any | null> => {
+  const body = await res.text();
+  try {
+    return JSON.parse(body);
+  } catch {
+    return null;
+  }
+};
+
 interface AudioLessonRecorderProps {
   teacherName: string;
   subject: string;
@@ -34,6 +81,8 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [analysisWarning, setAnalysisWarning] = useState<string | null>(null);
+  const [audioBytes, setAudioBytes] = useState(0);
   const [audioMimeType, setAudioMimeType] = useState<string>('audio/webm');
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -60,7 +109,12 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
   const startRecording = async () => {
     try {
       setAnalysisError(null);
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      setAnalysisWarning(null);
+      // Mono, cleaned-up speech: half the bytes of stereo and a clearer signal
+      // for the transcription than raw room noise.
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
+      });
 
       // Audio Context for live visualizer
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -79,7 +133,10 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
         : 'audio/webm';
       setAudioMimeType(mime);
 
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: mime });
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: mime,
+        audioBitsPerSecond: SPEECH_BITS_PER_SECOND,
+      });
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
@@ -100,6 +157,8 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
         reader.onloadend = () => {
           const base64String = (reader.result as string).split(',')[1];
           setAudioBase64(base64String);
+          setAudioBytes(base64String.length);
+          setAnalysisWarning(describeOversizedAudio(base64String.length));
         };
 
         // Stop stream tracks
@@ -245,18 +304,35 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
     const url = URL.createObjectURL(file);
     setAudioUrl(url);
 
+    setAnalysisError(null);
     const reader = new FileReader();
     reader.readAsDataURL(file);
     reader.onloadend = () => {
       const base64 = (reader.result as string).split(',')[1];
       setAudioBase64(base64);
+      setAudioBytes(base64.length);
+      setAnalysisWarning(describeOversizedAudio(base64.length));
     };
   };
 
   // Trigger Gemini AI Lesson Analysis
   const handleAnalyzeWithAI = async () => {
-    if (!audioBase64 && !transcript && !observerNotes) {
+    const writtenEvidence = (transcript || '').trim() || (observerNotes || '').trim();
+    if (!audioBase64 && !writtenEvidence) {
       setAnalysisError('Please record audio, upload an audio file, or provide lesson transcript/notes for AI analysis.');
+      return;
+    }
+
+    // Audio past the budget cannot be sent at all, so the analysis falls back
+    // to what was written down. With nothing written there is nothing to fall
+    // back to, and saying so beats letting the request die at the edge.
+    const audioFits = !!audioBase64 && audioBase64.length <= MAX_AUDIO_BASE64_BYTES;
+    if (audioBase64 && !audioFits && !writtenEvidence) {
+      setAnalysisError(
+        `This recording weighs ${formatMegabytes(audioBase64.length)} encoded and cannot be sent for analysis. ` +
+          'Record the lesson in shorter segments, or paste the classroom dialogue into the transcript below so ' +
+          'the lesson can be analysed from your notes.'
+      );
       return;
     }
 
@@ -265,7 +341,7 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
 
     try {
       const payload = {
-        audioBase64: audioBase64 || null,
+        audioBase64: audioFits ? audioBase64 : null,
         mimeType: audioMimeType,
         transcript: transcript || observerNotes || 'Lesson observation discussion and active instruction dialogue.',
         teacherName: teacherName || 'Observed Teacher',
@@ -283,7 +359,14 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
         body: JSON.stringify(payload),
       });
 
-      const json = await res.json();
+      const json = await readJsonResponse(res);
+      if (!json) {
+        throw new Error(
+          res.status === 413
+            ? 'The recording was too large for the server to accept. Record in shorter segments, or analyse from the transcript.'
+            : `The analysis service returned HTTP ${res.status} without a readable error.`
+        );
+      }
       if (!res.ok || !json.success) {
         throw new Error(json.error || 'Failed to analyze lesson');
       }
@@ -412,7 +495,7 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
                     ? 'Recording Paused'
                     : 'Recording Live Classroom...'
                   : audioUrl
-                  ? 'Audio Ready for Analysis'
+                  ? `Audio Ready for Analysis${audioBytes ? ` (${formatMegabytes(audioBytes)})` : ''}`
                   : 'Ready to Record'}
               </span>
             </div>
@@ -492,6 +575,17 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
           </div>
         </details>
       </div>
+
+      {/* Oversized-audio notice: the analysis still runs, from the transcript */}
+      {analysisWarning && !analysisError && (
+        <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+          <div className="flex-1">
+            <span className="font-semibold">Audio Too Long to Send: </span>
+            {analysisWarning}
+          </div>
+        </div>
+      )}
 
       {/* Error Alert */}
       {analysisError && (

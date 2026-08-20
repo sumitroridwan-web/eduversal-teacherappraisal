@@ -25,6 +25,18 @@ const app = express();
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
+/**
+ * How much base64 audio /api/analyze-lesson will accept.
+ *
+ * Vercel rejects request bodies over 4.5MB at the edge with a plain-text
+ * "Request Entity Too Large" the browser cannot read as JSON, so a lesson
+ * recording never even reached this file. A self-hosted deployment would
+ * happily accept far more; the same ceiling is enforced here so both behave
+ * alike and so the refusal always arrives as JSON. Kept in step with
+ * MAX_AUDIO_BASE64_BYTES in the recorder component.
+ */
+const MAX_AUDIO_BASE64_LENGTH = 4_000_000;
+
 /* ------------------------------------------------------------------ *
  * Access gate
  *
@@ -356,6 +368,14 @@ app.post("/api/analyze-lesson", requireAuth, async (req, res) => {
       additionalNotes,
       language,
     } = req.body;
+
+    if (typeof audioBase64 === "string" && audioBase64.length > MAX_AUDIO_BASE64_LENGTH) {
+      return res.status(413).json({
+        error:
+          "The audio is too large to analyse in one request. Record the lesson " +
+          "in shorter segments, or analyse it from the transcript instead.",
+      });
+    }
 
     const parts: any[] = [];
 
@@ -767,6 +787,27 @@ could not be observed and what further evidence would close that gap.
     console.error("Auto-Grade API Error:", error);
     return res.status(500).json({ error: error.message || "Failed to auto-grade lesson with Gemini AI." });
   }
+});
+
+/**
+ * body-parser rejects an oversized or malformed body by throwing, and Express's
+ * default handler answers with an HTML page - which the caller then fails to
+ * parse as JSON, hiding the actual reason. Every API failure leaves as JSON.
+ */
+app.use((error: any, _req: Request, res: Response, next: NextFunction) => {
+  if (res.headersSent) return next(error);
+
+  if (error?.type === "entity.too.large") {
+    return res
+      .status(413)
+      .json({ error: "The request is too large to process. Send less data in one call." });
+  }
+  if (error?.type === "entity.parse.failed") {
+    return res.status(400).json({ error: "The request body was not valid JSON." });
+  }
+
+  console.error("Unhandled API error:", error);
+  res.status(500).json({ error: error?.message || "Unexpected server error." });
 });
 
 export default app;
