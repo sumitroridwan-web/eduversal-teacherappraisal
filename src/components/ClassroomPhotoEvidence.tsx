@@ -10,15 +10,19 @@ import {
   Check,
 } from 'lucide-react';
 import { LessonPhoto } from '../types';
+import { putMedia, deleteMedia, dataUrlToBlob } from '../services/mediaStore';
 
 interface ClassroomPhotoEvidenceProps {
   photos: LessonPhoto[];
   onChange: (photos: LessonPhoto[]) => void;
+  /** Owns the snapshots in the device's media store, and deletes them with it. */
+  appraisalId: string;
 }
 
-// Photos are persisted in localStorage alongside the rest of the record, so
-// they are downscaled hard before being stored - full-resolution phone photos
-// would blow the storage quota after only a handful of observations.
+// Snapshots are kept on the device rather than inside the record, but they are
+// still downscaled hard before being stored - full-resolution phone photos are
+// a waste of a device's storage a dozen at a time, and the report never shows
+// them larger than this.
 const MAX_EDGE_PX = 1280;
 const JPEG_QUALITY = 0.7;
 const MAX_PHOTOS = 12;
@@ -52,6 +56,7 @@ function readFileAsImage(file: File): Promise<HTMLImageElement> {
 export const ClassroomPhotoEvidence: React.FC<ClassroomPhotoEvidenceProps> = ({
   photos,
   onChange,
+  appraisalId,
 }) => {
   const [cameraOpen, setCameraOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,23 +73,46 @@ export const ClassroomPhotoEvidence: React.FC<ClassroomPhotoEvidenceProps> = ({
   // Never leave the camera running when this panel goes away.
   useEffect(() => stopCamera, [stopCamera]);
 
-  const addPhoto = (dataUrl: string, source: LessonPhoto['source']) => {
+  /**
+   * Writes the image to the device's media store and hands back the key.
+   *
+   * A failure here is not fatal: the photo keeps its data URL and is saved
+   * inside the record as it used to be, which costs quota but never loses the
+   * evidence an appraiser just captured.
+   */
+  const storeLocally = async (dataUrl: string): Promise<string | undefined> => {
+    const blob = dataUrlToBlob(dataUrl);
+    if (!blob) return undefined;
+    try {
+      return await putMedia({ appraisalId, kind: 'photo', blob });
+    } catch (e) {
+      console.warn('Snapshot could not be stored on this device', e);
+      setError(
+        'This snapshot could not be stored on the device, so it is being kept inside the ' +
+          'observation instead. Storage may run out sooner than usual.'
+      );
+      return undefined;
+    }
+  };
+
+  const buildPhoto = (dataUrl: string, source: LessonPhoto['source'], blobId?: string): LessonPhoto => ({
+    id: `photo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    dataUrl,
+    blobId,
+    caption: '',
+    source,
+    capturedAt: new Date().toISOString(),
+    isBestPractice: false,
+  });
+
+  const addPhoto = async (dataUrl: string, source: LessonPhoto['source']) => {
     if (!dataUrl) return;
     if (photos.length >= MAX_PHOTOS) {
       setError(`A maximum of ${MAX_PHOTOS} photos can be attached to one observation.`);
       return;
     }
-    onChange([
-      ...photos,
-      {
-        id: `photo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        dataUrl,
-        caption: '',
-        source,
-        capturedAt: new Date().toISOString(),
-        isBestPractice: false,
-      },
-    ]);
+    const blobId = await storeLocally(dataUrl);
+    onChange([...photos, buildPhoto(dataUrl, source, blobId)]);
   };
 
   const openCamera = async () => {
@@ -113,7 +141,7 @@ export const ClassroomPhotoEvidence: React.FC<ClassroomPhotoEvidenceProps> = ({
   const takeSnapshot = () => {
     const video = videoRef.current;
     if (!video || !video.videoWidth) return;
-    addPhoto(compressToDataUrl(video, video.videoWidth, video.videoHeight), 'Camera');
+    void addPhoto(compressToDataUrl(video, video.videoWidth, video.videoHeight), 'Camera');
   };
 
   const handleFiles = async (files: FileList | null) => {
@@ -133,14 +161,7 @@ export const ClassroomPhotoEvidence: React.FC<ClassroomPhotoEvidenceProps> = ({
         const img = await readFileAsImage(file);
         const dataUrl = compressToDataUrl(img, img.naturalWidth, img.naturalHeight);
         if (!dataUrl) continue;
-        added.push({
-          id: `photo-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          dataUrl,
-          caption: '',
-          source: 'Upload',
-          capturedAt: new Date().toISOString(),
-          isBestPractice: false,
-        });
+        added.push(buildPhoto(dataUrl, 'Upload', await storeLocally(dataUrl)));
       } catch (e: any) {
         setError(e?.message || 'One of the images could not be read.');
       }
@@ -154,7 +175,13 @@ export const ClassroomPhotoEvidence: React.FC<ClassroomPhotoEvidenceProps> = ({
     onChange(photos.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   };
 
-  const remove = (id: string) => onChange(photos.filter((p) => p.id !== id));
+  const remove = (id: string) => {
+    // The record stops referring to it either way; leaving the bytes behind
+    // would fill the device with snapshots nothing can reach.
+    const dropped = photos.find((p) => p.id === id);
+    if (dropped?.blobId) void deleteMedia(dropped.blobId);
+    onChange(photos.filter((p) => p.id !== id));
+  };
 
   const bestPracticeCount = photos.filter((p) => p.isBestPractice).length;
 
@@ -168,7 +195,8 @@ export const ClassroomPhotoEvidence: React.FC<ClassroomPhotoEvidenceProps> = ({
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
             Capture the room or upload photos, caption them, and flag the ones worth sharing
-            as best practice. Captioned photos appear in the observation report.
+            as best practice. Captioned photos appear in the observation report and are kept
+            on this device, not uploaded with the record.
           </p>
         </div>
 

@@ -5,6 +5,8 @@ import {
   saveOrUpdateAppraisal,
   deleteAppraisal,
   createBlankAppraisal,
+  hydrateMedia,
+  hydrateAllMedia,
 } from './services/storage';
 import { TeacherAppraisalRecord, CareerLevel } from './types';
 import { flushQueue, pullAndMerge, onSyncConflict, resolveConflict } from './services/sync';
@@ -37,6 +39,46 @@ export default function App() {
       setCurrentAppraisal(null);
     }
   }, []);
+
+  /**
+   * Snapshots are stored on the device rather than inside the record, so an
+   * observation arrives from storage with references and no images. Fill them
+   * back in whenever one is opened - the sheet, the report and the PDF export
+   * all embed the image itself.
+   *
+   * hydrateMedia hands back the same record when there is nothing to restore,
+   * so this settles after one pass instead of feeding itself.
+   */
+  useEffect(() => {
+    if (!currentAppraisal) return;
+    let cancelled = false;
+
+    void (async () => {
+      const hydrated = await hydrateMedia(currentAppraisal);
+      if (!cancelled && hydrated !== currentAppraisal) setCurrentAppraisal(hydrated);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentAppraisal]);
+
+  // The school report prints best practice from across the portfolio, so it
+  // needs the images of every record rather than just the open one.
+  useEffect(() => {
+    if (currentView !== 'SCHOOL_REPORT' || appraisals.length === 0) return;
+    let cancelled = false;
+
+    void (async () => {
+      const hydrated = await hydrateAllMedia(appraisals);
+      const changed = hydrated.some((record, i) => record !== appraisals[i]);
+      if (!cancelled && changed) setAppraisals(hydrated);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentView, appraisals]);
 
   // Pull anything other devices have saved, then keep checking while the tab
   // is open. Sixty seconds is frequent enough for an appraisal period and

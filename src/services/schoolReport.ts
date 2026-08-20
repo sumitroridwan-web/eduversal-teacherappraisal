@@ -54,7 +54,7 @@ export interface SchoolReportData {
   domainAverages: Array<{ domain: string; score: number; rated: number }>;
   observations: ObservationSummary[];
   priorityImprovements: string[];
-  bestPractices: Array<{ caption: string; teacherName: string; dataUrl: string }>;
+  bestPractices: Array<{ caption: string; teacherName: string; dataUrl?: string }>;
   totalNotObservable: number;
 }
 
@@ -102,7 +102,7 @@ export function buildSchoolReport(
   DOMAIN_BUCKETS.forEach((b) => (domainTotals[b.key] = { sum: 0, count: 0 }));
 
   const improvementTally = new Map<string, { item: any; count: number; scores: number[] }>();
-  const bestPractices: Array<{ caption: string; teacherName: string; dataUrl: string }> = [];
+  const bestPractices: Array<{ caption: string; teacherName: string; dataUrl?: string }> = [];
 
   let percentageSum = 0;
   let totalNotObservable = 0;

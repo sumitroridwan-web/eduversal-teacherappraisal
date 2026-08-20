@@ -149,7 +149,15 @@ export interface ClassroomConditionNote {
 /** A classroom photo, captured live or uploaded, with its caption. */
 export interface LessonPhoto {
   id: string;
-  dataUrl: string;
+  /**
+   * The image itself, present while the record is open so the report and the
+   * PDF export can embed it. It is not what gets persisted: the bytes live in
+   * the device's media store under blobId, and this is filled back in when the
+   * observation is opened.
+   */
+  dataUrl?: string;
+  /** Key into the local media store. Absent only for records saved before it. */
+  blobId?: string;
   caption: string;
   source: 'Camera' | 'Upload';
   capturedAt: string;
@@ -297,6 +305,13 @@ export interface TeacherAppraisalRecord {
   
   // Audio & AI Data
   hasAudioRecording?: boolean;
+  /**
+   * Key into the device's media store for the lesson recording. The audio
+   * itself never enters the record, localStorage or Firestore - it stays on
+   * the appraiser's device and is loaded back for playback and analysis.
+   */
+  audioClipId?: string;
+  audioMimeType?: string;
   audioDurationSeconds?: number;
   audioTranscription?: string;
   transcriptSegments?: TranscriptSegment[];

@@ -2,8 +2,72 @@ import { TeacherAppraisalRecord, CareerLevel, SchoolLevel, SubjectCategory, curr
 import { calculateF2Scores, calculateF2Predicate, getItemsForLevel } from '../data/frameworkRubrics';
 import { capFeedback } from './glowGrowGo';
 import { pushRecord, deleteRemote } from './sync';
+import { getMedia, blobToDataUrl, deleteMediaForAppraisal } from './mediaStore';
 
 const STORAGE_KEY = 'eduversal_appraisals_v4_clean';
+
+/**
+ * The copy that gets written to disk and pushed to Firestore, with the image
+ * bytes taken out.
+ *
+ * A snapshot is held twice while an observation is open: as a data URL the
+ * report can embed, and as a blob in the device's media store. Only the
+ * second one is persisted. Writing both would put the photos back inside
+ * localStorage's quota and the 1MB Firestore document, which is what made a
+ * dozen snapshots enough to stop an observation saving at all.
+ *
+ * A photo with no blobId has nowhere else to live - a record from before the
+ * media store, or one taken while IndexedDB was refused - so its data URL is
+ * kept inline rather than dropped.
+ */
+export function dehydrateMedia(record: TeacherAppraisalRecord): TeacherAppraisalRecord {
+  if (!record.photos?.length) return record;
+
+  return {
+    ...record,
+    photos: record.photos.map((photo) =>
+      photo.blobId ? { ...photo, dataUrl: undefined } : photo
+    ),
+  };
+}
+
+/**
+ * Fills the image bytes back in from the device, for a record about to be
+ * shown, reported or exported. Left as it is when the media store has no
+ * copy, so a missing blob shows as a photo that cannot be rendered rather
+ * than silently vanishing from the evidence.
+ */
+export async function hydrateMedia(record: TeacherAppraisalRecord): Promise<TeacherAppraisalRecord> {
+  const photos = record.photos || [];
+  if (!photos.some((photo) => photo.blobId && !photo.dataUrl)) return record;
+
+  const restored = await Promise.all(
+    photos.map(async (photo) => {
+      if (photo.dataUrl || !photo.blobId) return photo;
+      const stored = await getMedia(photo.blobId);
+      if (!stored) return photo;
+      try {
+        return { ...photo, dataUrl: await blobToDataUrl(stored.blob) };
+      } catch {
+        return photo;
+      }
+    })
+  );
+
+  // Identity matters as much as the content: App hydrates the open record on
+  // every change, so handing back a new object when nothing was restored -
+  // the blob is missing, or this device has no store - would re-render, hydrate
+  // and re-render again without end.
+  const changed = restored.some((photo, i) => photo !== photos[i]);
+  return changed ? { ...record, photos: restored } : record;
+}
+
+/** Hydrates a whole list, for the school report and its best-practice wall. */
+export async function hydrateAllMedia(
+  records: TeacherAppraisalRecord[]
+): Promise<TeacherAppraisalRecord[]> {
+  return Promise.all(records.map(hydrateMedia));
+}
 
 /** Records saved before academic years existed still need a value. */
 function withAcademicYear(record: TeacherAppraisalRecord): TeacherAppraisalRecord {
@@ -31,7 +95,7 @@ export function loadAppraisals(): TeacherAppraisalRecord[] {
 
 export function saveAppraisals(appraisals: TeacherAppraisalRecord[]): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(appraisals));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(appraisals.map(dehydrateMedia)));
   } catch (e: any) {
     console.error('Failed to save appraisals to localStorage', e);
 
@@ -45,7 +109,7 @@ export function saveAppraisals(appraisals: TeacherAppraisalRecord[]): void {
 
     throw new Error(
       isQuota
-        ? 'This browser is out of local storage, so the observation was NOT saved. Remove some photo evidence, or export and clear older observations, then save again.'
+        ? 'This browser is out of local storage, so the observation was NOT saved. Export and clear older observations, then save again.'
         : 'The observation could not be saved to this browser.'
     );
   }
@@ -85,8 +149,10 @@ export function saveOrUpdateAppraisal(record: TeacherAppraisalRecord): TeacherAp
   }
   saveAppraisals(all);
   // Fire-and-forget: the local write already succeeded, and sync.ts queues
-  // this for retry if the network is down.
-  void pushRecord('appraisals', record);
+  // this for retry if the network is down. The media is deliberately left
+  // behind - it stays on the device that captured it, and sending it would
+  // put the record straight back over the 1MB Firestore ceiling.
+  void pushRecord('appraisals', dehydrateMedia(record));
   return record;
 }
 
@@ -95,6 +161,9 @@ export function deleteAppraisal(id: string): void {
   const filtered = all.filter((a) => a.id !== id);
   saveAppraisals(filtered);
   void deleteRemote('appraisals', id);
+  // The recording and snapshots would otherwise sit on the device forever,
+  // owned by an observation that no longer exists.
+  void deleteMediaForAppraisal(id);
 }
 
 export function createBlankAppraisal(

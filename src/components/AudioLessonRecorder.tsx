@@ -1,17 +1,20 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Mic, Square, Play, Pause, Upload, Sparkles, Volume2, AlertCircle, RefreshCw, Clock, CheckCircle2, FileText, Copy, Trash2 } from 'lucide-react';
 import { AiLessonAnalysis, CareerLevel, TranscriptSegment } from '../types';
+import { putMedia, getMedia, deleteMedia, blobToBase64, formatBytes } from '../services/mediaStore';
 
 /**
- * How much base64 audio a single analysis request may carry.
+ * How large a recording may be before it can no longer be sent for analysis.
  *
  * Vercel refuses any request body over 4.5MB at the edge, before the function
  * runs, and answers with the plain text "Request Entity Too Large" - which is
  * what surfaced as "Unexpected token 'R'" when the reply was parsed as JSON.
- * Base64 inflates audio by a third, so this budget is what the encoded audio
- * may weigh, leaving room for the transcript and the rest of the envelope.
+ * Base64 inflates audio by a third on the way out, so three megabytes on disk
+ * is about four in the request, leaving room for the transcript and the rest
+ * of the envelope. This is a limit on analysing a clip, never on keeping one:
+ * the recording is stored on the device whatever it weighs.
  */
-const MAX_AUDIO_BASE64_BYTES = 4_000_000;
+const MAX_AUDIO_UPLOAD_BYTES = 3_000_000;
 
 /**
  * Opus at 12 kbps mono stays intelligible for classroom speech and keeps
@@ -21,18 +24,16 @@ const MAX_AUDIO_BASE64_BYTES = 4_000_000;
  */
 const SPEECH_BITS_PER_SECOND = 12_000;
 
-const formatMegabytes = (bytes: number) => `${(bytes / 1_000_000).toFixed(1)} MB`;
-
 /**
  * The notice to show when captured audio is past what the endpoint accepts,
  * or null when it fits. Raised as soon as the audio is captured rather than
  * on analysis, so the appraiser can re-record while the lesson is still live.
  */
-const describeOversizedAudio = (base64Length: number): string | null => {
-  if (base64Length <= MAX_AUDIO_BASE64_BYTES) return null;
-  return `This audio weighs ${formatMegabytes(base64Length)} encoded, past the ${formatMegabytes(
-    MAX_AUDIO_BASE64_BYTES
-  )} the analysis endpoint accepts. The lesson will be analysed from the transcript and your notes instead - record in shorter segments to have the audio itself analysed.`;
+const describeOversizedAudio = (bytes: number): string | null => {
+  if (bytes <= MAX_AUDIO_UPLOAD_BYTES) return null;
+  return `This recording is ${formatBytes(bytes)}, past the ${formatBytes(
+    MAX_AUDIO_UPLOAD_BYTES
+  )} the analysis endpoint accepts. It stays saved on this device, and the lesson will be analysed from the transcript and your notes instead - record in shorter segments to have the audio itself analysed.`;
 };
 
 /**
@@ -69,6 +70,12 @@ interface AudioLessonRecorderProps {
    * what was said.
    */
   onTranscriptChange?: (transcript: string, segments: TranscriptSegment[]) => void;
+  /** Owns the recording in the device's media store, and deletes it with it. */
+  appraisalId: string;
+  /** A recording already held on this device for this observation. */
+  initialAudioClipId?: string;
+  /** Fires once a clip is on the device, so the record can point at it. */
+  onAudioCaptured?: (clip: { clipId: string; mimeType: string; durationSeconds: number }) => void;
 }
 
 export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
@@ -84,12 +91,14 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
   initialTranscript,
   initialSegments,
   onTranscriptChange,
+  appraisalId,
+  initialAudioClipId,
+  onAudioCaptured,
 }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [audioBase64, setAudioBase64] = useState<string | null>(null);
   // Seeded from the stored observation. The parent remounts this component
   // per record id, so the seeding happens once per teacher rather than on
   // every keystroke echoed back down from the form.
@@ -119,6 +128,12 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
   const recordingTimeRef = useRef(0);
   const finalisedResultsRef = useRef(0);
   const transcriptRef = useRef<HTMLTextAreaElement | null>(null);
+  // The clip itself, held for playback and for the analysis request. It is
+  // not state: nothing renders it directly, and re-encoding a half-hour of
+  // audio into a base64 string on every render is exactly what to avoid.
+  const audioBlobRef = useRef<Blob | null>(null);
+  const audioClipIdRef = useRef<string | undefined>(initialAudioClipId);
+  const audioUrlRef = useRef<string | null>(null);
   /**
    * Seconds already captured in earlier recordings of this same observation.
    * A lesson is often taken in several passes - more so now the endpoint only
@@ -134,6 +149,43 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
   const lastPublishedRef = useRef(
     `${(initialSegments || []).length}|${initialTranscript || ''}`
   );
+
+  /**
+   * Takes a clip that was just recorded or chosen: makes it playable, stores
+   * it on this device, and tells the observation where it lives.
+   *
+   * Storage failing is not fatal - the clip is still playable and analysable
+   * for as long as the page is open - but it is said out loud, because the
+   * appraiser is the only one who can decide to re-record.
+   */
+  const adoptAudio = async (blob: Blob, durationSeconds: number) => {
+    if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+    const url = URL.createObjectURL(blob);
+    audioUrlRef.current = url;
+    audioBlobRef.current = blob;
+
+    const mime = blob.type || 'audio/webm';
+    setAudioUrl(url);
+    setAudioBytes(blob.size);
+    setAudioMimeType(mime);
+    setAnalysisWarning(describeOversizedAudio(blob.size));
+
+    const replaced = audioClipIdRef.current;
+    try {
+      const clipId = await putMedia({ appraisalId, kind: 'audio', blob });
+      audioClipIdRef.current = clipId;
+      // Only once the new clip is safely stored, so a failed write cannot
+      // leave the observation pointing at a recording that was just deleted.
+      if (replaced && replaced !== clipId) void deleteMedia(replaced);
+      onAudioCaptured?.({ clipId, mimeType: mime, durationSeconds });
+    } catch (e) {
+      console.warn('The recording could not be stored on this device', e);
+      setAnalysisWarning(
+        'This recording could not be saved to the device, so it will be lost if the page is ' +
+          'reloaded. Analyse it now, or check that this browser is allowed to store data.'
+      );
+    }
+  };
 
   // Format seconds to mm:ss
   const formatTime = (seconds: number) => {
@@ -184,25 +236,15 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
       };
 
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: mime });
-        const url = URL.createObjectURL(audioBlob);
-        setAudioUrl(url);
-
-        // Convert to base64 for API transmission
-        const reader = new FileReader();
-        reader.readAsDataURL(audioBlob);
-        reader.onloadend = () => {
-          const base64String = (reader.result as string).split(',')[1];
-          setAudioBase64(base64String);
-          setAudioBytes(base64String.length);
-          setAnalysisWarning(describeOversizedAudio(base64String.length));
-        };
+        const captured = recordingTimeRef.current;
 
         // Stop stream tracks
         stream.getTracks().forEach((track) => track.stop());
         if (animationFrameRef.current) {
           cancelAnimationFrame(animationFrameRef.current);
         }
+
+        await adoptAudio(new Blob(audioChunksRef.current, { type: mime }), captured);
       };
 
       // Optional Browser SpeechRecognition for live text capture
@@ -352,25 +394,17 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setAudioMimeType(file.type || 'audio/webm');
-    const url = URL.createObjectURL(file);
-    setAudioUrl(url);
-
     setAnalysisError(null);
-    const reader = new FileReader();
-    reader.readAsDataURL(file);
-    reader.onloadend = () => {
-      const base64 = (reader.result as string).split(',')[1];
-      setAudioBase64(base64);
-      setAudioBytes(base64.length);
-      setAnalysisWarning(describeOversizedAudio(base64.length));
-    };
+    // Duration is unknown until it plays; the <audio> element reports it once
+    // the metadata is read, and the record is updated then.
+    void adoptAudio(file, 0);
   };
 
   // Trigger Gemini AI Lesson Analysis
   const handleAnalyzeWithAI = async () => {
     const writtenEvidence = (transcript || '').trim() || (observerNotes || '').trim();
-    if (!audioBase64 && !writtenEvidence) {
+    const audioBlob = audioBlobRef.current;
+    if (!audioBlob && !writtenEvidence) {
       setAnalysisError('Please record audio, upload an audio file, or provide lesson transcript/notes for AI analysis.');
       return;
     }
@@ -378,12 +412,12 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
     // Audio past the budget cannot be sent at all, so the analysis falls back
     // to what was written down. With nothing written there is nothing to fall
     // back to, and saying so beats letting the request die at the edge.
-    const audioFits = !!audioBase64 && audioBase64.length <= MAX_AUDIO_BASE64_BYTES;
-    if (audioBase64 && !audioFits && !writtenEvidence) {
+    const audioFits = !!audioBlob && audioBlob.size <= MAX_AUDIO_UPLOAD_BYTES;
+    if (audioBlob && !audioFits && !writtenEvidence) {
       setAnalysisError(
-        `This recording weighs ${formatMegabytes(audioBase64.length)} encoded and cannot be sent for analysis. ` +
-          'Record the lesson in shorter segments, or paste the classroom dialogue into the transcript below so ' +
-          'the lesson can be analysed from your notes.'
+        `This recording is ${formatBytes(audioBlob.size)} and cannot be sent for analysis. It stays saved ` +
+          'on this device - record the lesson in shorter segments, or paste the classroom dialogue into the ' +
+          'transcript below so the lesson can be analysed from your notes.'
       );
       return;
     }
@@ -393,7 +427,9 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
 
     try {
       const payload = {
-        audioBase64: audioFits ? audioBase64 : null,
+        // Encoded here rather than held encoded: the clip lives on the device
+        // as binary, and only this one request needs it as base64.
+        audioBase64: audioFits && audioBlob ? await blobToBase64(audioBlob) : null,
         mimeType: audioMimeType,
         transcript: transcript || observerNotes || 'Lesson observation discussion and active instruction dialogue.',
         teacherName: teacherName || 'Observed Teacher',
@@ -432,6 +468,37 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
     }
   };
 
+  // Bring back the recording this observation already has on the device, so
+  // reopening a teacher's sheet finds the lesson still there rather than an
+  // empty recorder that quietly lost it on the last reload.
+  useEffect(() => {
+    if (!initialAudioClipId) return;
+    // The clip just captured comes straight back down as a prop once the
+    // observation records it. Reloading it from the device then would open a
+    // second window onto bytes already in hand.
+    if (audioClipIdRef.current === initialAudioClipId && audioBlobRef.current) return;
+    let cancelled = false;
+
+    void (async () => {
+      const stored = await getMedia(initialAudioClipId);
+      if (cancelled || !stored) return;
+
+      audioClipIdRef.current = initialAudioClipId;
+      if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
+      const url = URL.createObjectURL(stored.blob);
+      audioUrlRef.current = url;
+      audioBlobRef.current = stored.blob;
+      setAudioUrl(url);
+      setAudioBytes(stored.bytes || stored.blob.size);
+      setAudioMimeType(stored.mimeType || 'audio/webm');
+      setAnalysisWarning(describeOversizedAudio(stored.bytes || stored.blob.size));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialAudioClipId]);
+
   // Hand every change up to the observation, which autosaves it against this
   // teacher. Runs for typed corrections too, not only for captured speech.
   useEffect(() => {
@@ -465,6 +532,10 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
     }
   };
 
+  // Bytes on disk stand in for "there is a clip": the blob itself is a ref,
+  // and a ref cannot re-render the controls that depend on it.
+  const hasAudio = audioBytes > 0;
+
   const handleClearTranscript = () => {
     if (!transcript && segments.length === 0) return;
     const confirmed = window.confirm(
@@ -483,6 +554,8 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
       if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
       if (audioContextRef.current) audioContextRef.current.close();
+      // The clip stays on the device; only this window onto it is released.
+      if (audioUrlRef.current) URL.revokeObjectURL(audioUrlRef.current);
     };
   }, []);
 
@@ -593,7 +666,7 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
                     ? 'Recording Paused'
                     : 'Recording Live Classroom...'
                   : audioUrl
-                  ? `Audio Ready for Analysis${audioBytes ? ` (${formatMegabytes(audioBytes)})` : ''}`
+                  ? `Audio Saved on This Device${audioBytes ? ` (${formatBytes(audioBytes)})` : ''}`
                   : 'Ready to Record'}
               </span>
             </div>
@@ -614,7 +687,19 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
                 <Volume2 className="w-4 h-4" />
                 <span>Audio Captured Successfully</span>
               </div>
-              <audio src={audioUrl} controls className="w-full h-8 opacity-90" />
+              <audio
+                src={audioUrl}
+                controls
+                className="w-full h-8 opacity-90"
+                onLoadedMetadata={(e) => {
+                  // An uploaded clip has no duration until it is read, and a
+                  // recorded one reports Infinity in Chrome until it seeks.
+                  const seconds = e.currentTarget.duration;
+                  const clipId = audioClipIdRef.current;
+                  if (!clipId || !Number.isFinite(seconds) || seconds <= 0) return;
+                  onAudioCaptured?.({ clipId, mimeType: audioMimeType, durationSeconds: Math.round(seconds) });
+                }}
+              />
             </div>
           ) : (
             <div className="text-center text-xs text-slate-400 flex flex-col items-center justify-center py-2">
@@ -630,11 +715,11 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
             id="btn-run-ai-analysis"
             type="button"
             onClick={handleAnalyzeWithAI}
-            disabled={isAnalyzing || isRecording || (!audioBase64 && !transcript && !observerNotes)}
+            disabled={isAnalyzing || isRecording || (!hasAudio && !transcript && !observerNotes)}
             className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-semibold text-sm transition shadow-sm ${
               isAnalyzing
                 ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
-                : !audioBase64 && !transcript && !observerNotes
+                : !hasAudio && !transcript && !observerNotes
                 ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
                 : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-100 cursor-pointer'
             }`}

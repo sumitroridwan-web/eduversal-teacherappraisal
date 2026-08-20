@@ -1071,6 +1071,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
         // Keyed by record so opening another teacher's observation reseeds the
         // recorder with that teacher's transcript instead of carrying one over.
         key={record.id}
+        appraisalId={record.id}
         teacherName={record.teacherName}
         subject={record.subject}
         careerLevel={record.careerLevel}
@@ -1081,6 +1082,18 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
         existingAnalysis={record.aiAnalysis}
         initialTranscript={record.audioTranscription}
         initialSegments={record.transcriptSegments}
+        initialAudioClipId={record.audioClipId}
+        onAudioCaptured={({ clipId, mimeType, durationSeconds }) => {
+          // The clip stays on the device; the observation only learns where
+          // to find it, so the record stays small enough to store and sync.
+          setRecord((prev) => ({
+            ...prev,
+            hasAudioRecording: true,
+            audioClipId: clipId,
+            audioMimeType: mimeType,
+            audioDurationSeconds: durationSeconds || prev.audioDurationSeconds,
+          }));
+        }}
         onTranscriptChange={(transcriptText, segments) => {
           // Held on the record as it is spoken: autosave then writes it to
           // this teacher's observation, so the transcript survives a closed
@@ -1106,6 +1119,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
 
       {/* Classroom Photo Evidence & Best Practices */}
       <ClassroomPhotoEvidence
+        appraisalId={record.id}
         photos={record.photos || []}
         onChange={(photos) => setRecord((prev) => ({ ...prev, photos }))}
       />

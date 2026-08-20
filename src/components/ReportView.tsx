@@ -441,11 +441,17 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {captionedPhotos.map((photo) => (
                 <figure key={photo.id} className="border border-slate-200 rounded-xl overflow-hidden bg-white break-inside-avoid">
-                  <img
-                    src={photo.dataUrl}
-                    alt={photo.caption}
-                    className="w-full h-32 object-cover"
-                  />
+                  {photo.dataUrl ? (
+                    <img
+                      src={photo.dataUrl}
+                      alt={photo.caption}
+                      className="w-full h-32 object-cover"
+                    />
+                  ) : (
+                    <div className="w-full h-32 bg-slate-50 border-b border-slate-200 flex items-center justify-center text-center px-2 text-[10px] text-slate-400 leading-snug">
+                      Photo is stored on the device that captured it
+                    </div>
+                  )}
                   <figcaption className="p-2 text-[11px] text-slate-700 leading-snug">
                     {photo.caption}
                     {photo.isBestPractice && (
@@ -471,11 +477,17 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
             <div className="space-y-2 text-xs">
               {bestPractices.map((photo, i) => (
                 <div key={photo.id} className="flex gap-3 p-2.5 rounded-xl border border-amber-200 bg-amber-50/60">
-                  <img
-                    src={photo.dataUrl}
-                    alt={photo.caption}
-                    className="w-16 h-16 object-cover rounded-lg border border-amber-200 shrink-0"
-                  />
+                  {photo.dataUrl ? (
+                    <img
+                      src={photo.dataUrl}
+                      alt={photo.caption}
+                      className="w-16 h-16 object-cover rounded-lg border border-amber-200 shrink-0"
+                    />
+                  ) : (
+                    <div className="w-16 h-16 rounded-lg border border-amber-200 bg-amber-100/60 shrink-0 flex items-center justify-center text-[9px] text-amber-700 text-center leading-tight px-1">
+                      On capturing device
+                    </div>
+                  )}
                   <div>
                     <div className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">
                       Practice {i + 1}
