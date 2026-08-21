@@ -660,7 +660,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
         {/* Itemized Indicator Score Matrix */}
         <div className="mb-8">
           <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3 pb-1 border-b border-slate-200">
-            Itemized Framework 2 Observation Indicators &amp; Rubric Evidence
+            Itemized Framework 2 Observation Indicators
           </h3>
 
           <div className="space-y-4">
@@ -687,11 +687,6 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
                           <p className="text-[11px] text-slate-600">
                             {sc ? item.descriptors[sc] : 'Not yet scored.'}
                           </p>
-                          {scoreRec.notes && (
-                            <div className="mt-1 text-[11px] text-sky-800 font-medium bg-sky-50 px-2 py-0.5 rounded border border-sky-200 inline-block">
-                              Evidence: {scoreRec.notes}
-                            </div>
-                          )}
                         </div>
 
                         {/* Score Tag */}
