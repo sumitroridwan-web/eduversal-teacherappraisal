@@ -132,6 +132,13 @@ export interface TranscriptSegment {
   startSeconds: number;
   timeLabel: string; // mm:ss from the start of the recording
   text: string;
+  /**
+   * Who was speaking - Teacher, Student, Students or Unclear - when the
+   * transcript came from the server, which can tell voices apart. Absent on
+   * lines captured by the browser's own engine, and on lines the appraiser
+   * typed, neither of which can.
+   */
+  speaker?: string;
 }
 
 /**

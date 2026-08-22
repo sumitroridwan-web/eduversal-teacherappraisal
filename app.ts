@@ -344,6 +344,177 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
+/**
+ * How large one transcription window may be.
+ *
+ * Posted as raw bytes rather than base64 inside JSON, so the body is the
+ * audio itself. Kept in step with MAX_WINDOW_BYTES in the audioWindows
+ * service, which is what decides where the recording is cut.
+ */
+const MAX_WINDOW_BYTES = 3_500_000;
+
+/** Seconds to mm:ss, matching the stamps the recorder writes. */
+function formatStamp(totalSeconds: number): string {
+  const safe = Math.max(0, Math.round(totalSeconds));
+  const mins = Math.floor(safe / 60);
+  const secs = safe % 60;
+  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
+/**
+ * API: transcribe one window of a lesson recording.
+ *
+ * The browser's own speech engine is a dictation tool - one speaker, close to
+ * the microphone, no idea who is talking - and a classroom is none of those
+ * things. Transcription happens here instead, against a model that was given
+ * the whole window of audio and can say whether it was the teacher or a child
+ * speaking. The recorder still runs the browser engine while the lesson is
+ * live, but only as something for the appraiser to watch; this is the
+ * transcript that ends up on the record.
+ *
+ * One window at a time, because a lesson does not fit in a single request.
+ * The caller passes the offset the window starts at and stitches the replies
+ * back into one timeline.
+ */
+app.post(
+  "/api/transcribe-window",
+  requireAuth,
+  express.raw({ type: () => true, limit: "12mb" }),
+  async (req, res) => {
+    try {
+      const ai = await getGeminiClient();
+      if (!ai) {
+        return res.status(500).json({
+          error: "Gemini API key is not configured. Please check your environment variables.",
+        });
+      }
+      const { Type } = await loadGenAI();
+
+      const audio: Buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
+      if (!audio.length) {
+        return res.status(400).json({ error: "No audio was received for this window." });
+      }
+      if (audio.length > MAX_WINDOW_BYTES) {
+        return res.status(413).json({
+          error: `This window is ${audio.length} bytes, past the ${MAX_WINDOW_BYTES} a request accepts.`,
+        });
+      }
+
+      const offsetSeconds = Number(req.query.offsetSeconds) || 0;
+      const language = typeof req.query.language === "string" ? req.query.language : "en";
+      const mimeType =
+        typeof req.query.mimeType === "string" && req.query.mimeType ? req.query.mimeType : "audio/wav";
+
+      const spokenLanguage =
+        language === "id"
+          ? "The lesson is taught in Bahasa Indonesia, often mixed with English subject " +
+            "vocabulary. Transcribe each utterance in the language it was actually spoken " +
+            "in, and do not translate."
+          : "The lesson is taught in English, and may be mixed with the local language. " +
+            "Transcribe each utterance in the language it was actually spoken in, and do " +
+            "not translate.";
+
+      const promptText = `
+You are transcribing one window of a classroom lesson observation, recorded on a
+device placed in the room rather than on a microphone worn by the teacher. Expect
+a distant and reverberant teacher, overlapping children, scraping chairs and
+general classroom noise. This is normal and is not a reason to return nothing.
+
+${spokenLanguage}
+
+Return the spoken content of this window as an ordered list of utterances. For each:
+- startSeconds: when it begins, in seconds from the start of THIS window of audio,
+  not from the start of the lesson. A number, and never past the length of the audio.
+- speaker: one of "Teacher", "Student", "Students", or "Unclear". Use "Students" for
+  choral or whole-class responses, and "Unclear" only when the audio genuinely does
+  not tell you.
+- text: what was said, verbatim. Keep hesitations and false starts - an appraiser is
+  reading this for how the teacher questions and explains, and a tidied paraphrase
+  destroys exactly that evidence.
+
+Rules:
+- Transcribe only what is actually audible. Never guess at words to fill a gap, and
+  never invent classroom dialogue that would fit the lesson.
+- Where speech is present but unintelligible, emit the utterance with the text
+  "[inaudible]" rather than dropping or inventing it.
+- If the window carries no intelligible speech at all - silence, or only room noise -
+  return an empty list. That is a valid answer.
+- Do not summarise, comment on, or evaluate the lesson. Transcript only.
+`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.7-flash",
+        contents: {
+          parts: [
+            { inlineData: { mimeType, data: audio.toString("base64") } },
+            { text: promptText },
+          ],
+        },
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              segments: {
+                type: Type.ARRAY,
+                description: "Utterances heard in this window, in the order they were spoken",
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    startSeconds: {
+                      type: Type.NUMBER,
+                      description: "Seconds from the start of this window of audio",
+                    },
+                    speaker: {
+                      type: Type.STRING,
+                      description: 'Teacher | Student | Students | Unclear',
+                    },
+                    text: { type: Type.STRING, description: "Verbatim speech" },
+                  },
+                  required: ["startSeconds", "speaker", "text"],
+                },
+              },
+            },
+            required: ["segments"],
+          },
+        },
+      });
+
+      const text = response.text;
+      if (!text) {
+        throw new Error("No response received from AI model.");
+      }
+
+      const parsed = JSON.parse(text);
+      const raw = Array.isArray(parsed?.segments) ? parsed.segments : [];
+
+      // Stamped against the lesson rather than the window, and sorted, because
+      // a model asked for times in order still occasionally returns them out of
+      // it and a transcript that jumps backwards cannot be cited.
+      const segments = raw
+        .filter((seg: any) => typeof seg?.text === "string" && seg.text.trim())
+        .map((seg: any) => {
+          const within = Math.max(0, Number(seg.startSeconds) || 0);
+          const startSeconds = Math.round(offsetSeconds + within);
+          return {
+            startSeconds,
+            timeLabel: formatStamp(startSeconds),
+            speaker: typeof seg.speaker === "string" ? seg.speaker : "Unclear",
+            text: String(seg.text).trim(),
+          };
+        })
+        .sort((a: any, b: any) => a.startSeconds - b.startSeconds);
+
+      return res.json({ success: true, segments });
+    } catch (error: any) {
+      console.error("Transcription Error:", error);
+      return res.status(500).json({
+        error: error.message || "Failed to transcribe this part of the lesson.",
+      });
+    }
+  }
+);
+
 // API: Analyze Lesson Audio or Transcript
 app.post("/api/analyze-lesson", requireAuth, async (req, res) => {
   try {
@@ -372,8 +543,9 @@ app.post("/api/analyze-lesson", requireAuth, async (req, res) => {
     if (typeof audioBase64 === "string" && audioBase64.length > MAX_AUDIO_BASE64_LENGTH) {
       return res.status(413).json({
         error:
-          "The audio is too large to analyse in one request. Record the lesson " +
-          "in shorter segments, or analyse it from the transcript instead.",
+          "The audio is too large to analyse in one request. Transcribe the " +
+          "recording first - that reads it window by window, whatever its " +
+          "length - and analyse the lesson from that transcript.",
       });
     }
 
