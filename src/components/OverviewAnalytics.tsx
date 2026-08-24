@@ -40,13 +40,12 @@ import {
   ReferenceLine,
 } from 'recharts';
 import { TeacherAppraisalRecord, SchoolLevel, SubjectCategory, CareerLevel, ItemScoreRecord, EDUVERSAL_SCHOOLS } from '../types';
+import { routeToHash, NEW_OBSERVATION } from '../services/routing';
 import { calculateF2Scores, calculateF2Predicate, COVERAGE_FLOOR } from '../data/frameworkRubrics';
 
 interface OverviewAnalyticsProps {
   appraisals: TeacherAppraisalRecord[];
   onSelectAppraisal: (appraisal: TeacherAppraisalRecord) => void;
-  onViewReport: (appraisal: TeacherAppraisalRecord) => void;
-  onNewAppraisal: () => void;
 }
 
 type GraphTab = 'overview' | 'campuses' | 'domains' | 'career_dept' | 'ranking';
@@ -62,8 +61,6 @@ const GRAPH_TAB_OPTIONS: Array<{ value: GraphTab; label: string; icon: LucideIco
 export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
   appraisals,
   onSelectAppraisal,
-  onViewReport,
-  onNewAppraisal,
 }) => {
   const [selectedSchool, setSelectedSchool] = useState<string>('All');
   const [selectedSchoolLevel, setSelectedSchoolLevel] = useState<string>('All');
@@ -342,14 +339,13 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
             </h1>
           </div>
 
-          <button
-            type="button"
-            onClick={onNewAppraisal}
+          <a
+            href={routeToHash({ view: 'FORM', appraisalId: NEW_OBSERVATION })}
             className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-sm transition cursor-pointer"
           >
             <Users className="w-4 h-4" />
             <span>+ New Observation</span>
-          </button>
+          </a>
         </div>
 
         {/* Filters Grid */}
@@ -1050,30 +1046,24 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
 
                     <td className="py-3 px-4">
                       <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onViewReport(a);
-                          }}
+                        <a
+                          href={routeToHash({ view: 'REPORT', appraisalId: a.id })}
+                          onClick={(e) => e.stopPropagation()}
                           title={`Open the observation report for ${a.teacherName || 'this teacher'}`}
                           className="text-xs text-[#165963] hover:text-[#11474f] font-semibold px-2.5 py-1 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg transition inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"
                         >
                           <FileText className="w-3 h-3" />
                           <span>Teacher Report</span>
-                        </button>
+                        </a>
 
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onSelectAppraisal(a);
-                          }}
+                        <a
+                          href={routeToHash({ view: 'FORM', appraisalId: a.id })}
+                          onClick={(e) => e.stopPropagation()}
                           className="text-xs text-indigo-600 hover:text-indigo-700 font-medium px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"
                         >
                           <span>Open Sheet</span>
                           <ArrowUpRight className="w-3 h-3" />
-                        </button>
+                        </a>
                       </div>
                     </td>
                   </tr>

@@ -18,26 +18,23 @@ import {
   CalendarPlus,
 } from 'lucide-react';
 import { TeacherAppraisalRecord, CareerLevel, SchoolLevel, SubjectCategory, EDUVERSAL_SCHOOLS } from '../types';
+import { routeToHash, NEW_OBSERVATION } from '../services/routing';
 import { calculateF2Scores } from '../data/frameworkRubrics';
 
 interface AppraisalListProps {
   appraisals: TeacherAppraisalRecord[];
-  onSelectAppraisal: (appraisal: TeacherAppraisalRecord) => void;
-  onNewAppraisal: () => void;
   onDeleteAppraisal: (id: string) => void;
   /** Starts the next observation of the same teacher, carrying the posting over. */
   onNewFollowUp?: (appraisal: TeacherAppraisalRecord) => void;
-  onViewReport: (appraisal: TeacherAppraisalRecord) => void;
   onOpenRubrics: (level: CareerLevel) => void;
 }
 
+// Opening a sheet, opening a report and starting an observation are links
+// rather than handlers, so a row can be middle-clicked into its own tab.
 export const AppraisalList: React.FC<AppraisalListProps> = ({
   appraisals,
-  onSelectAppraisal,
-  onNewAppraisal,
   onDeleteAppraisal,
   onNewFollowUp,
-  onViewReport,
   onOpenRubrics,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -83,15 +80,14 @@ export const AppraisalList: React.FC<AppraisalListProps> = ({
           </div>
 
           <div className="flex items-center gap-3">
-            <button
+            <a
               id="btn-new-appraisal"
-              type="button"
-              onClick={onNewAppraisal}
+              href={routeToHash({ view: 'FORM', appraisalId: NEW_OBSERVATION })}
               className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-sm transition cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>+ Start New Observation</span>
-            </button>
+            </a>
           </div>
         </div>
 
@@ -279,23 +275,21 @@ export const AppraisalList: React.FC<AppraisalListProps> = ({
                     </button>
                   )}
 
-                  <button
-                    type="button"
-                    onClick={() => onViewReport(appraisal)}
+                  <a
+                    href={routeToHash({ view: 'REPORT', appraisalId: appraisal.id })}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-semibold transition cursor-pointer"
                   >
                     <FileText className="w-3.5 h-3.5 text-indigo-600" />
                     <span>Report</span>
-                  </button>
+                  </a>
 
-                  <button
-                    type="button"
-                    onClick={() => onSelectAppraisal(appraisal)}
+                  <a
+                    href={routeToHash({ view: 'FORM', appraisalId: appraisal.id })}
                     className="flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-sm transition cursor-pointer"
                   >
                     <Edit className="w-3.5 h-3.5" />
                     <span>Open Sheet</span>
-                  </button>
+                  </a>
                 </div>
               </div>
             </div>
@@ -310,13 +304,12 @@ export const AppraisalList: React.FC<AppraisalListProps> = ({
           <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1 mb-5">
             No observation sheets match your search or filter parameters. Start a new observation or reset sample appraisals.
           </p>
-          <button
-            type="button"
-            onClick={onNewAppraisal}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl transition cursor-pointer shadow-sm"
+          <a
+            href={routeToHash({ view: 'FORM', appraisalId: NEW_OBSERVATION })}
+            className="inline-block px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl transition cursor-pointer shadow-sm"
           >
             + Create New Classroom Observation
-          </button>
+          </a>
         </div>
       )}
     </div>

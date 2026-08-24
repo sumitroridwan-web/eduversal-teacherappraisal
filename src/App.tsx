@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   loadAppraisals,
   saveAppraisals,
@@ -11,6 +11,7 @@ import {
 import { TeacherAppraisalRecord, CareerLevel } from './types';
 import { flushQueue, pullAndMerge, onSyncConflict, resolveConflict } from './services/sync';
 import { carryContext } from './services/observationSheet';
+import { Route, parseRoute, routeToHash, NEW_OBSERVATION } from './services/routing';
 import { Navbar } from './components/Navbar';
 import { AppraisalForm } from './components/AppraisalForm';
 import { AppraisalList } from './components/AppraisalList';
@@ -23,22 +24,75 @@ import { RubricReferenceModal } from './components/RubricReferenceModal';
 
 export default function App() {
   const [appraisals, setAppraisals] = useState<TeacherAppraisalRecord[]>([]);
-  const [currentAppraisal, setCurrentAppraisal] = useState<TeacherAppraisalRecord | null>(null);
-  const [currentView, setCurrentView] = useState<'FORM' | 'LIST' | 'ANALYTICS' | 'REPORT' | 'SCHOOL_REPORT' | 'WALKTHROUGH'>('LIST');
+  /**
+   * An observation that has been started but never saved.
+   *
+   * It is held here rather than in storage so that opening a new sheet and
+   * thinking better of it leaves nothing behind in the portfolio. It is held
+   * here rather than inside the form so that walking off to the portfolio and
+   * back does not lose what has been typed. Nothing writes it to the device
+   * until the appraiser presses Save Draft or Save.
+   */
+  const [draft, setDraft] = useState<TeacherAppraisalRecord | null>(null);
+  const [route, setRoute] = useState<Route>(() => parseRoute(window.location.hash));
   const [isRubricModalOpen, setIsRubricModalOpen] = useState(false);
   const [rubricLevel, setRubricLevel] = useState<CareerLevel>('Proficient');
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
 
-  // Load initial appraisals on startup
+  // Load initial appraisals on startup. Which one is open comes from the
+  // address, not from whichever happened to be first.
   useEffect(() => {
-    const loaded = loadAppraisals();
-    setAppraisals(loaded);
-    if (loaded.length > 0) {
-      setCurrentAppraisal(loaded[0]);
-    } else {
-      setCurrentAppraisal(null);
-    }
+    setAppraisals(loadAppraisals());
   }, []);
+
+  // Follow the address bar: the Back button, a bookmark and a link opened in
+  // a second tab all arrive here.
+  useEffect(() => {
+    const onHashChange = () => setRoute(parseRoute(window.location.hash));
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
+  /**
+   * Go to a screen.
+   *
+   * Every navigation goes through the address so that the view, the Back
+   * button and anything the appraiser opened in another tab cannot disagree.
+   * `replace` is for corrections that should not become a step of their own -
+   * a saved observation taking its real id, which nobody wants to go Back to.
+   */
+  const navigate = useCallback((next: Route, replace = false) => {
+    const hash = routeToHash(next);
+    if (replace) {
+      window.history.replaceState(null, '', hash);
+    } else if (window.location.hash !== hash) {
+      window.location.hash = hash;
+    }
+    setRoute(parseRoute(hash));
+  }, []);
+
+  const isDraftRoute = route.appraisalId === NEW_OBSERVATION;
+
+  /** The observation on screen: the unsaved draft, or one from the portfolio. */
+  const currentAppraisal = useMemo(() => {
+    if (!route.appraisalId) return null;
+    if (isDraftRoute) return draft;
+    return appraisals.find((a) => a.id === route.appraisalId) || null;
+  }, [route.appraisalId, isDraftRoute, draft, appraisals]);
+
+  // Opening the address of a new observation is what starts one, so that a
+  // link to it works in a second tab as well as from the button.
+  useEffect(() => {
+    if (route.view !== 'FORM' || !isDraftRoute) return;
+    setDraft((prev) => prev || createBlankAppraisal('Proficient'));
+  }, [route.view, isDraftRoute]);
+
+  /**
+   * What the Active Sheet link points at when nothing is open: the first
+   * observation in the portfolio, so the link is never dead.
+   */
+  const activeAppraisalId = route.appraisalId || appraisals[0]?.id;
+  const currentView = route.view;
 
   /**
    * Snapshots are stored on the device rather than inside the record, so an
@@ -55,13 +109,18 @@ export default function App() {
 
     void (async () => {
       const hydrated = await hydrateMedia(currentAppraisal);
-      if (!cancelled && hydrated !== currentAppraisal) setCurrentAppraisal(hydrated);
+      if (cancelled || hydrated === currentAppraisal) return;
+      if (isDraftRoute) {
+        setDraft(hydrated);
+      } else {
+        setAppraisals((prev) => prev.map((a) => (a.id === hydrated.id ? hydrated : a)));
+      }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [currentAppraisal]);
+  }, [currentAppraisal, isDraftRoute]);
 
   // The school report prints best practice from across the portfolio, so it
   // needs the images of every record rather than just the open one.
@@ -123,18 +182,26 @@ export default function App() {
         const refreshed = loadAppraisals().map((a) => (a.id === resolved.id ? resolved : a));
         saveAppraisals(refreshed);
         setAppraisals(refreshed);
-        setCurrentAppraisal((prev) => (prev?.id === resolved.id ? resolved : prev));
       }),
     []
   );
 
-  // Handle Save
+  /**
+   * Write an observation to the device. This is the only thing that does.
+   *
+   * A sheet that was never saved is living at the address of a new
+   * observation; once it is on the device it has an identity of its own and
+   * the address is corrected to match, in place, so that Back does not lead
+   * to a blank sheet that no longer exists.
+   */
   const handleSaveAppraisal = (record: TeacherAppraisalRecord) => {
     try {
       const saved = saveOrUpdateAppraisal(record);
-      setCurrentAppraisal(saved);
-      const updatedAll = loadAppraisals();
-      setAppraisals(updatedAll);
+      setAppraisals(loadAppraisals());
+      if (isDraftRoute) {
+        setDraft(null);
+        navigate({ view: 'FORM', appraisalId: saved.id }, true);
+      }
     } catch (e: any) {
       // Surface it rather than letting the success toast lie about the save.
       window.alert(e?.message || 'The observation could not be saved.');
@@ -151,6 +218,18 @@ export default function App() {
    * history quietly splits in two.
    */
   const handleNewFollowUp = (previous: TeacherAppraisalRecord) => {
+    // Seeding replaces whatever unsaved sheet is already open, which is the
+    // one way this can cost an appraiser work, so it is the one that asks.
+    if (
+      draft &&
+      !window.confirm(
+        'You have an observation that has not been saved yet. Starting a follow-up will ' +
+          'discard it. Continue?'
+      )
+    ) {
+      return;
+    }
+
     const blank = createBlankAppraisal(
       previous.careerLevel,
       previous.schoolLevel,
@@ -158,20 +237,10 @@ export default function App() {
       previous.schoolName
     );
 
-    const saved = saveOrUpdateAppraisal({ ...blank, ...carryContext(previous) });
-    setCurrentAppraisal(saved);
-    setAppraisals(loadAppraisals());
-    setCurrentView('FORM');
-  };
-
-  // Handle Create New Appraisal
-  const handleNewAppraisal = () => {
-    const newBlank = createBlankAppraisal('Proficient');
-    const saved = saveOrUpdateAppraisal(newBlank);
-    setCurrentAppraisal(saved);
-    const updatedAll = loadAppraisals();
-    setAppraisals(updatedAll);
-    setCurrentView('FORM');
+    // Held in memory, not written to the device: a follow-up nobody fills in
+    // should leave the teacher's history as it was.
+    setDraft({ ...blank, ...carryContext(previous) });
+    navigate({ view: 'FORM', appraisalId: NEW_OBSERVATION });
   };
 
   // Handle Delete
@@ -180,14 +249,7 @@ export default function App() {
       deleteAppraisal(id);
       const updatedAll = loadAppraisals();
       setAppraisals(updatedAll);
-      if (currentAppraisal?.id === id) {
-        if (updatedAll.length > 0) {
-          setCurrentAppraisal(updatedAll[0]);
-        } else {
-          setCurrentAppraisal(null);
-          setCurrentView('LIST');
-        }
-      }
+      if (route.appraisalId === id) navigate({ view: 'LIST' });
     }
   };
 
@@ -196,21 +258,18 @@ export default function App() {
     if (window.confirm('Are you sure you want to erase all observation records? This will clear your portfolio.')) {
       saveAppraisals([]);
       setAppraisals([]);
-      setCurrentAppraisal(null);
-      setCurrentView('LIST');
+      navigate({ view: 'LIST' });
     }
   };
 
   // Handle View Selection
   const handleSelectAppraisal = (appraisal: TeacherAppraisalRecord) => {
-    setCurrentAppraisal(appraisal);
-    setCurrentView('FORM');
+    navigate({ view: 'FORM', appraisalId: appraisal.id });
   };
 
   // Handle Report View
   const handleViewReport = (appraisal: TeacherAppraisalRecord) => {
-    setCurrentAppraisal(appraisal);
-    setCurrentView('REPORT');
+    navigate({ view: 'REPORT', appraisalId: appraisal.id });
   };
 
   // Open Rubric Reference
@@ -224,8 +283,7 @@ export default function App() {
       {/* Top Navigation */}
       <Navbar
         currentView={currentView}
-        onChangeView={(view) => setCurrentView(view)}
-        onNewAppraisal={handleNewAppraisal}
+        activeAppraisalId={activeAppraisalId}
         onOpenRubrics={() => handleOpenRubrics(currentAppraisal?.careerLevel || 'Proficient')}
         hasActiveRecord={!!currentAppraisal}
       />
@@ -237,12 +295,9 @@ export default function App() {
         {currentView === 'LIST' && (
           <AppraisalList
             appraisals={appraisals}
-            onSelectAppraisal={handleSelectAppraisal}
-            onNewAppraisal={handleNewAppraisal}
             onDeleteAppraisal={handleDeleteAppraisal}
             onNewFollowUp={handleNewFollowUp}
             onClearAll={handleClearAll}
-            onViewReport={handleViewReport}
             onOpenRubrics={handleOpenRubrics}
           />
         )}
@@ -255,6 +310,11 @@ export default function App() {
               onSave={handleSaveAppraisal}
               onViewReport={handleViewReport}
               onOpenRubrics={handleOpenRubrics}
+              // An observation that has never been saved autosaves nowhere.
+              // Its edits are handed back up instead, so they survive a walk
+              // to the portfolio and back without reaching the device.
+              isUnsaved={isDraftRoute}
+              onDraftChange={isDraftRoute ? setDraft : undefined}
             />
           ) : (
             <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-sm max-w-md mx-auto my-8">
@@ -265,13 +325,12 @@ export default function App() {
               <p className="text-xs text-slate-500 mt-1 mb-5">
                 Start a new classroom observation sheet or pick an existing record from the portfolio.
               </p>
-              <button
-                type="button"
-                onClick={handleNewAppraisal}
-                className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl transition cursor-pointer shadow-sm"
+              <a
+                href={routeToHash({ view: 'FORM', appraisalId: NEW_OBSERVATION })}
+                className="inline-block px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl transition cursor-pointer shadow-sm"
               >
                 + Create New Observation
-              </button>
+              </a>
             </div>
           )
         )}
@@ -284,8 +343,6 @@ export default function App() {
           <OverviewAnalytics
             appraisals={appraisals}
             onSelectAppraisal={handleSelectAppraisal}
-            onViewReport={handleViewReport}
-            onNewAppraisal={handleNewAppraisal}
           />
         )}
 
@@ -293,7 +350,7 @@ export default function App() {
           currentAppraisal ? (
             <ReportView
               record={currentAppraisal}
-              onBack={() => setCurrentView('FORM')}
+              onBack={() => navigate({ view: 'FORM', appraisalId: currentAppraisal.id })}
             />
           ) : (
             <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center shadow-sm max-w-md mx-auto my-8">
@@ -301,13 +358,12 @@ export default function App() {
               <p className="text-xs text-slate-500 mt-1 mb-5">
                 Select an observation record from the directory to generate its official quality assurance report.
               </p>
-              <button
-                type="button"
-                onClick={() => setCurrentView('LIST')}
-                className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl transition cursor-pointer shadow-sm"
+              <a
+                href={routeToHash({ view: 'LIST' })}
+                className="inline-block px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl transition cursor-pointer shadow-sm"
               >
                 Go to Observations List
-              </button>
+              </a>
             </div>
           )
         )}

@@ -90,6 +90,14 @@ interface AppraisalFormProps {
   onSave: (record: TeacherAppraisalRecord) => void;
   onViewReport: (record: TeacherAppraisalRecord) => void;
   onOpenRubrics: (level: CareerLevel) => void;
+  /**
+   * This observation has never been saved, so nothing here may write it to
+   * the device. Opening a sheet used to put a record in the portfolio before
+   * a word had been typed, and thinking better of it left an empty one behind.
+   */
+  isUnsaved?: boolean;
+  /** Where the edits of an unsaved observation are kept while it is unsaved. */
+  onDraftChange?: (record: TeacherAppraisalRecord) => void;
 }
 
 export const AppraisalForm: React.FC<AppraisalFormProps> = ({
@@ -97,6 +105,8 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
   onSave,
   onViewReport,
   onOpenRubrics,
+  isUnsaved = false,
+  onDraftChange,
 }) => {
   const { t, language } = useLanguage();
   const [record, setRecord] = useState<TeacherAppraisalRecord>(initialRecord);
@@ -137,8 +147,18 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
   const [newGrow, setNewGrow] = useState('');
   const [newGo, setNewGo] = useState('');
 
+  /**
+   * The last edit handed up to the app for an unsaved observation.
+   *
+   * It comes straight back down as initialRecord, and resyncing from it would
+   * overwrite the sheet with what it had just sent - one keystroke at a time,
+   * forever. Recognising the record on its way back is what stops that.
+   */
+  const lastPublishedDraft = useRef<TeacherAppraisalRecord | null>(null);
+
   // Synchronize initial record when selected appraisal changes
   useEffect(() => {
+    if (initialRecord === lastPublishedDraft.current) return;
     setRecord({ ...initialRecord, feedback: capFeedback(initialRecord.feedback) });
   }, [initialRecord]);
 
@@ -146,7 +166,9 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
   // it through the parent would replace initialRecord and reset this form
   // mid-edit. An observation can run 40 minutes, so losing it to a closed tab
   // is not acceptable.
-  const [autoSaveState, setAutoSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [autoSaveState, setAutoSaveState] = useState<
+    'idle' | 'saving' | 'saved' | 'error' | 'unsaved'
+  >('idle');
   const skipFirstAutoSave = useRef(true);
 
   useEffect(() => {
@@ -154,6 +176,19 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
       skipFirstAutoSave.current = false;
       return;
     }
+
+    // An observation that has never been saved is not written anywhere. The
+    // edits go up to the app, which holds them for as long as this tab is
+    // open, and the portfolio gains a record only when the appraiser asks for
+    // one. The header says so, because this is the one state where closing
+    // the tab does lose the sheet.
+    if (isUnsaved) {
+      lastPublishedDraft.current = record;
+      onDraftChange?.(record);
+      setAutoSaveState('unsaved');
+      return;
+    }
+
     setAutoSaveState('saving');
     const timer = setTimeout(() => {
       try {
@@ -164,7 +199,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
       }
     }, 1200);
     return () => clearTimeout(timer);
-  }, [record]);
+  }, [record, isUnsaved]);
 
   // Recalculate stats whenever careerLevel or scores change
   const currentItems = getItemsForLevel(record.careerLevel);
@@ -2080,13 +2115,23 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
           )}
 
           <span className="text-slate-300">|</span>
-          <span className="text-[10px] text-slate-400">
-            {autoSaveState === 'saving'
+          <span
+            className={`text-[10px] ${
+              isUnsaved || autoSaveState === 'error'
+                ? 'text-amber-600 font-semibold'
+                : 'text-slate-400'
+            }`}
+          >
+            {isUnsaved
+              ? t('sheet.notSavedYet')
+              : autoSaveState === 'saving'
               ? t('sheet.saving')
               : autoSaveState === 'saved'
               ? t('sheet.autosaved')
               : autoSaveState === 'error'
               ? t('sheet.autosaveFailed')
+              : autoSaveState === 'unsaved'
+              ? t('sheet.notSavedYet')
               : ''}
           </span>
         </div>

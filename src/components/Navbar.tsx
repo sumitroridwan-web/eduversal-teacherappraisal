@@ -13,19 +13,24 @@ import {
 import { EduversalLogo } from './EduversalLogo';
 import { useLanguage } from '../i18n/LanguageContext';
 import { LANGUAGES } from '../i18n/translations';
+import { routeToHash, NEW_OBSERVATION } from '../services/routing';
 
 interface NavbarProps {
   currentView: 'FORM' | 'LIST' | 'ANALYTICS' | 'REPORT' | 'SCHOOL_REPORT' | 'WALKTHROUGH';
-  onChangeView: (view: 'FORM' | 'LIST' | 'ANALYTICS' | 'SCHOOL_REPORT' | 'WALKTHROUGH') => void;
-  onNewAppraisal: () => void;
+  /**
+   * Which observation the Active Sheet link opens. Every destination in this
+   * bar is a real address so the browser can open it in a tab of its own -
+   * an appraiser reading a report beside the sheet they are filling in - and
+   * this is the one that needs to know which record it is pointing at.
+   */
+  activeAppraisalId?: string;
   onOpenRubrics: () => void;
   hasActiveRecord: boolean;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
   currentView,
-  onChangeView,
-  onNewAppraisal,
+  activeAppraisalId,
   onOpenRubrics,
   hasActiveRecord,
 }) => {
@@ -47,8 +52,8 @@ export const Navbar: React.FC<NavbarProps> = ({
         <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-14 sm:h-16 gap-2 sm:gap-4">
             {/* Logo & School Branding */}
-            <div
-              onClick={() => onChangeView('LIST')}
+            <a
+              href={routeToHash({ view: 'LIST' })}
               className="flex items-center gap-2.5 sm:gap-3.5 cursor-pointer select-none group min-w-0"
             >
               <div className="p-1 rounded-xl bg-slate-50 border border-slate-200/80 shadow-2xs group-hover:border-teal-300 transition shrink-0">
@@ -68,14 +73,13 @@ export const Navbar: React.FC<NavbarProps> = ({
                   {t('nav.tagline')}
                 </p>
               </div>
-            </div>
+            </a>
 
             {/* Desktop / Tablet Navigation Links */}
             <nav className="hidden md:flex items-center gap-1 bg-slate-100/90 p-1 rounded-xl border border-slate-200 text-xs">
-              <button
+              <a
                 id="nav-btn-list"
-                type="button"
-                onClick={() => onChangeView('LIST')}
+                href={routeToHash({ view: 'LIST' })}
                 className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-medium transition cursor-pointer ${
                   currentView === 'LIST'
                     ? 'bg-indigo-600 text-white shadow-xs'
@@ -84,12 +88,11 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <FileSpreadsheet className="w-3.5 h-3.5" />
                 <span>{t('nav.portfolio')}</span>
-              </button>
+              </a>
 
-              <button
+              <a
                 id="nav-btn-form"
-                type="button"
-                onClick={() => onChangeView('FORM')}
+                href={routeToHash({ view: 'FORM', appraisalId: activeAppraisalId })}
                 className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-medium transition cursor-pointer ${
                   currentView === 'FORM' || currentView === 'REPORT'
                     ? 'bg-indigo-600 text-white shadow-xs'
@@ -98,12 +101,11 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
                 <span>{t('nav.activeSheet')}</span>
-              </button>
+              </a>
 
-              <button
+              <a
                 id="nav-btn-analytics"
-                type="button"
-                onClick={() => onChangeView('ANALYTICS')}
+                href={routeToHash({ view: 'ANALYTICS' })}
                 className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-medium transition cursor-pointer ${
                   currentView === 'ANALYTICS'
                     ? 'bg-indigo-600 text-white shadow-xs'
@@ -112,12 +114,11 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <BarChart3 className="w-3.5 h-3.5" />
                 <span>{t('nav.overview')}</span>
-              </button>
+              </a>
 
-              <button
+              <a
                 id="nav-btn-school-report"
-                type="button"
-                onClick={() => onChangeView('SCHOOL_REPORT')}
+                href={routeToHash({ view: 'SCHOOL_REPORT' })}
                 className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-medium transition cursor-pointer ${
                   currentView === 'SCHOOL_REPORT'
                     ? 'bg-indigo-600 text-white shadow-xs'
@@ -126,12 +127,11 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <FileText className="w-3.5 h-3.5" />
                 <span>{t('nav.schoolReport')}</span>
-              </button>
+              </a>
 
-              <button
+              <a
                 id="nav-btn-walkthrough"
-                type="button"
-                onClick={() => onChangeView('WALKTHROUGH')}
+                href={routeToHash({ view: 'WALKTHROUGH' })}
                 className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-medium transition cursor-pointer ${
                   currentView === 'WALKTHROUGH'
                     ? 'bg-indigo-600 text-white shadow-xs'
@@ -140,7 +140,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <ClipboardCheck className="w-3.5 h-3.5" />
                 <span>{t('nav.walkthrough')}</span>
-              </button>
+              </a>
             </nav>
 
             {/* Right Action Tools & CTAs */}
@@ -156,16 +156,15 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span className="hidden sm:inline">{t('nav.rubrics')}</span>
               </button>
 
-              <button
+              <a
                 id="nav-btn-new"
-                type="button"
-                onClick={onNewAppraisal}
+                href={routeToHash({ view: 'FORM', appraisalId: NEW_OBSERVATION })}
                 className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm transition cursor-pointer whitespace-nowrap"
               >
                 <Plus className="w-4 h-4" />
                 <span className="hidden xs:inline">{t('nav.new')}</span>
                 <span className="xs:hidden">{t('nav.newShort')}</span>
-              </button>
+              </a>
 
               {/* Language switcher */}
               <div
@@ -220,9 +219,8 @@ export const Navbar: React.FC<NavbarProps> = ({
 
       {/* Mobile Bottom Floating Navigation Bar */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 px-2 py-1.5 shadow-lg flex items-center justify-around text-[10px] print:hidden">
-        <button
-          type="button"
-          onClick={() => onChangeView('LIST')}
+        <a
+          href={routeToHash({ view: 'LIST' })}
           className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl font-medium transition cursor-pointer min-h-[44px] min-w-[60px] ${
             currentView === 'LIST'
               ? 'text-indigo-600 font-bold bg-indigo-50/80'
@@ -231,11 +229,10 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           <FileSpreadsheet className="w-5 h-5 mb-0.5" />
           <span>{t('nav.mobile.portfolio')}</span>
-        </button>
+        </a>
 
-        <button
-          type="button"
-          onClick={() => onChangeView('FORM')}
+        <a
+          href={routeToHash({ view: 'FORM', appraisalId: activeAppraisalId })}
           className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl font-medium transition cursor-pointer min-h-[44px] min-w-[60px] ${
             currentView === 'FORM' || currentView === 'REPORT'
               ? 'text-indigo-600 font-bold bg-indigo-50/80'
@@ -244,11 +241,10 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           <ShieldCheck className="w-5 h-5 mb-0.5" />
           <span>{t('nav.mobile.observe')}</span>
-        </button>
+        </a>
 
-        <button
-          type="button"
-          onClick={() => onChangeView('ANALYTICS')}
+        <a
+          href={routeToHash({ view: 'ANALYTICS' })}
           className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl font-medium transition cursor-pointer min-h-[44px] min-w-[60px] ${
             currentView === 'ANALYTICS'
               ? 'text-indigo-600 font-bold bg-indigo-50/80'
@@ -257,11 +253,10 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           <BarChart3 className="w-5 h-5 mb-0.5" />
           <span>{t('nav.mobile.analytics')}</span>
-        </button>
+        </a>
 
-        <button
-          type="button"
-          onClick={() => onChangeView('SCHOOL_REPORT')}
+        <a
+          href={routeToHash({ view: 'SCHOOL_REPORT' })}
           className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl font-medium transition cursor-pointer min-h-[44px] min-w-[60px] ${
             currentView === 'SCHOOL_REPORT'
               ? 'text-indigo-600 font-bold bg-indigo-50/80'
@@ -270,11 +265,10 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           <FileText className="w-5 h-5 mb-0.5" />
           <span>{t('nav.mobile.report')}</span>
-        </button>
+        </a>
 
-        <button
-          type="button"
-          onClick={() => onChangeView('WALKTHROUGH')}
+        <a
+          href={routeToHash({ view: 'WALKTHROUGH' })}
           className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl font-medium transition cursor-pointer min-h-[44px] min-w-[60px] ${
             currentView === 'WALKTHROUGH'
               ? 'text-indigo-600 font-bold bg-indigo-50/80'
@@ -283,7 +277,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         >
           <ClipboardCheck className="w-5 h-5 mb-0.5" />
           <span>{t('nav.mobile.walkthrough')}</span>
-        </button>
+        </a>
 
         <button
           type="button"

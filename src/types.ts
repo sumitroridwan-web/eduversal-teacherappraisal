@@ -1,26 +1,35 @@
 export type CareerLevel = 'Induction' | 'Developing' | 'Proficient' | 'Lead' | 'EarlyYears';
 
+/**
+ * The Eduversal schools. Kept in alphabetical order: this is rendered as a
+ * fifteen-entry dropdown, and an unordered one has to be read end to end
+ * every time. A test holds the order, so a school added here belongs in its
+ * alphabetical place rather than at the bottom.
+ */
 export const EDUVERSAL_SCHOOLS = [
+  'Cahaya Rancamaya Islamic School',
+  'Emer Islamic Boarding School (EIBOS)',
+  'Fatih Bilingual School',
   'Global Cahaya Bangsa',
   'Kesatuan Bangsa School',
-  'Cahaya Rancamaya Islamic School',
+  'Kharisma Bangsa School',
+  'Mega Islamic School',
+  'Pakar Belia Islamic Boarding School',
+  'Prestige Bilingual School',
+  'Pribadi Bandung School',
   'Pribadi Depok School',
   'Pribadi Premiere School',
-  'Mega Islamic School',
-  'Emer Islamic Boarding School (EIBOS)',
   'Semesta 2',
-  'Pakar Belia Islamic Boarding School',
-  'Kharisma Bangsa School',
-  'Pribadi Bandung School',
-  'Prestige Bilingual School',
-  'Fatih Bilingual School',
-  'TNA Fatih Bilingual School',
   'Semesta School',
+  'TNA Fatih Bilingual School',
 ] as const;
 
 export type EduversalSchoolName = typeof EDUVERSAL_SCHOOLS[number];
 
-/** The Eduversal appraisal team. Used for the appraiser and observer fields. */
+/**
+ * The Eduversal appraisal team. Used for the appraiser and observer fields,
+ * and kept in alphabetical order for the same reason the schools are.
+ */
 export const APPRAISERS = [
   'Aan Mulyana',
   'Ade Setyawati',
