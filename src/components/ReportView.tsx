@@ -728,8 +728,10 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
           <p className="text-slate-700 leading-relaxed">{config.progressionRequirements}</p>
         </div>
 
-        {/* Formal Signature Blocks */}
-        <div className="pt-8 border-t-2 border-slate-900 grid grid-cols-3 gap-6 text-xs text-center">
+        {/* Formal Signature Blocks - the two people who were actually in the
+            room. A third line for the academic coordinator was printed on
+            every report and signed on none of them. */}
+        <div className="pt-8 border-t-2 border-slate-900 grid grid-cols-2 gap-6 text-xs text-center">
           <div>
             <div className="h-16 border-b border-slate-400 mb-2 flex items-end justify-center pb-1 font-signature text-slate-600 italic">
               {record.teacherName}
@@ -744,14 +746,6 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
             </div>
             <strong className="text-slate-900 block">{record.appraiserName}</strong>
             <span className="text-slate-500 text-[11px]">Visiting Appraiser Signature</span>
-          </div>
-
-          <div>
-            <div className="h-16 border-b border-slate-400 mb-2 flex items-end justify-center pb-1 font-signature text-slate-600 italic">
-              Academic Quality Board
-            </div>
-            <strong className="text-slate-900 block">Eduversal Academic Coordinator</strong>
-            <span className="text-slate-500 text-[11px]">School Principal / Academic Hub</span>
           </div>
         </div>
 
