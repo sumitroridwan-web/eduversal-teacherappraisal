@@ -54,6 +54,13 @@ the sheet is built around capture during the lesson and rating afterwards:
 
 - **Capture** — notes, activities, audio and photos. A **Stamp 08:23** button
   opens a new timestamped line, which is what makes a moment citable later.
+- **Read lesson insights** takes the recording, however long it runs, and writes
+  it up as timestamped lesson notes rather than a transcript: at each point,
+  what the class was doing and what the room was like, drawn from what the
+  teacher said, what the students said and the noise of the room. Every note
+  says which of those it rests on, and carries the few words it turned on, so a
+  rating cited to it can still be checked. Correct anything that does not match
+  what you saw — the notes are yours, and they are what the AI analysis cites.
 - **Rate** — the rubric, with the lesson notes pinned above it. A part-rated
   record opens straight here.
 

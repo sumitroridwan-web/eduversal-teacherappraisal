@@ -22,7 +22,10 @@ const EVIDENCE: CitationEvidence = {
     },
   ],
   observerNotes: 'Students re-grouped after the demo and settled quickly.',
-  transcript: 'so why did the volume change when we heated it',
+  lessonNotes:
+    '[12:40] Lesson Activity - The teacher pressed the class on why the volume changed when the ' +
+    'flask was heated, and took three answers before settling on one. (teacher speech, student ' +
+    'speech; "so why did the volume change when we heated it")',
   photos: [{ caption: 'Success criteria displayed on the board' }],
 };
 
@@ -32,7 +35,7 @@ function rated(overrides: Partial<GradedIndicator> = {}): GradedIndicator {
     score: 3,
     notObservable: false,
     rationale: 'Questioning pushed into analysis.',
-    evidenceRefs: ['Transcript [12:40]: "so why did the volume change"'],
+    evidenceRefs: ['Lesson note [12:40]: "so why did the volume change"'],
     ...overrides,
   };
 }
@@ -49,7 +52,7 @@ describe('normalise', () => {
 
 describe('extractQuotes', () => {
   test('finds straight, curly and single-quoted spans', () => {
-    assert.deepEqual(extractQuotes('Transcript: "the volume changed"'), ['the volume changed']);
+    assert.deepEqual(extractQuotes('Lesson note: "the volume changed"'), ['the volume changed']);
     assert.deepEqual(extractQuotes('Photo: “board shot”'), ['board shot']);
     assert.deepEqual(extractQuotes("Note: 'settled quickly'"), ['settled quickly']);
   });
@@ -70,7 +73,7 @@ describe('verifyCitations', () => {
 
   test('withdraws a rating whose quotation was never said', () => {
     const result = verifyCitations(
-      [rated({ evidenceRefs: ['Transcript [09:12]: "name three properties of a catalyst"'] })],
+      [rated({ evidenceRefs: ['Lesson note [09:12]: "name three properties of a catalyst"'] })],
       EVIDENCE
     );
 
@@ -89,11 +92,11 @@ describe('verifyCitations', () => {
   });
 
   test('withdraws a rating citing a source that was never captured', () => {
-    // The hallucination this is really for: a transcript quotation from a
-    // lesson where nobody recorded any audio.
-    const withoutAudio: CitationEvidence = { ...EVIDENCE, transcript: undefined };
+    // The hallucination this is really for: a quotation from the recording of
+    // a lesson where nobody recorded any audio.
+    const withoutAudio: CitationEvidence = { ...EVIDENCE, lessonNotes: undefined };
     const result = verifyCitations(
-      [rated({ evidenceRefs: ['Transcript [03:20]: student explanation of the method'] })],
+      [rated({ evidenceRefs: ['Lesson note [03:20]: student explanation of the method'] })],
       withoutAudio
     );
 
@@ -129,7 +132,7 @@ describe('verifyCitations', () => {
 
   test('survives a rewrapped quotation - different case, punctuation and spacing', () => {
     const result = verifyCitations(
-      [rated({ evidenceRefs: ['Transcript: "So why did the volume change,"'] })],
+      [rated({ evidenceRefs: ['Lesson note: "So why did the volume change,"'] })],
       EVIDENCE
     );
 
@@ -141,7 +144,7 @@ describe('verifyCitations', () => {
       [
         rated({
           evidenceRefs: [
-            'Transcript [00:01]: "an exchange that never happened in this lesson"',
+            'Lesson note [00:01]: "an exchange that never happened in this lesson"',
             'Photo: "Success criteria displayed on the board"',
           ],
         }),
@@ -182,11 +185,14 @@ describe('isCitationVerifiable', () => {
   test('ignores a quotation too short to be distinctive', () => {
     // "why?" is a real thing to cite and matches almost anything, so a citation
     // resting on it falls back to its locator rather than passing on the quote.
-    assert.equal(isCitationVerifiable('Transcript: "why?"', 'so why did the volume change', ['transcript']), true);
-    assert.equal(isCitationVerifiable('Transcript: "why?"', 'so why did the volume change', []), false);
+    assert.equal(
+      isCitationVerifiable('Lesson note: "why?"', 'so why did the volume change', ['lesson note']),
+      true
+    );
+    assert.equal(isCitationVerifiable('Lesson note: "why?"', 'so why did the volume change', []), false);
   });
 
   test('rejects an empty citation', () => {
-    assert.equal(isCitationVerifiable('   ', 'anything at all', ['transcript']), false);
+    assert.equal(isCitationVerifiable('   ', 'anything at all', ['lesson note']), false);
   });
 });

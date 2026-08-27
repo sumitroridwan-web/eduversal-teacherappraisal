@@ -24,7 +24,10 @@ export async function executeAutoGrade(
       lessonTopic: record.lessonTopic,
       learningObjectives: record.learningObjectives,
       observerNotes: record.generalObserverNotes,
-      transcript: record.audioTranscription,
+      // Observations recorded before the audio pass moved to insights hold a
+      // verbatim transcript instead; it is still what was captured from the
+      // lesson, so it is still what the grader is given.
+      lessonNotes: record.lessonNotes || record.audioTranscription,
       photos: (record.photos || [])
         .filter((p) => p.caption.trim())
         .map((p) => ({
@@ -85,7 +88,7 @@ export async function executeAutoGrade(
  */
 
 interface EvidenceItem {
-  /** How an appraiser would locate this again, e.g. "Transcript [04:12]". */
+  /** How an appraiser would locate this again, e.g. "Lesson note [04:12]". */
   ref: string;
   text: string;
 }
@@ -142,13 +145,32 @@ function buildEvidenceIndex(record: TeacherAppraisalRecord, activities: LessonAc
     index.push({ ref: 'Stated learning objectives', text: record.learningObjectives });
   }
 
-  const segments = record.transcriptSegments || [];
-  if (segments.length) {
-    segments.forEach((seg) => {
+  // One citable moment per note, so a lesson read from the recording can
+  // corroborate an indicator minute by minute rather than as a single blob.
+  // The note, what it was heard from and the words it turned on all go into
+  // the searchable text: an indicator about student talk should be reachable
+  // from a note whose basis was student speech.
+  const insights = record.lessonInsights || [];
+  const legacySegments = record.transcriptSegments || [];
+  if (insights.length) {
+    insights.forEach((insight) => {
+      if (!insight.note.trim()) return;
+      index.push({
+        ref: `Lesson note [${insight.timeLabel}] - ${insight.focus}`,
+        text: [insight.note, (insight.heardFrom || []).join(', '), insight.quote]
+          .filter(Boolean)
+          .join('. '),
+      });
+    });
+  } else if (legacySegments.length) {
+    legacySegments.forEach((seg) => {
       if (seg.text.trim()) index.push({ ref: `Transcript [${seg.timeLabel}]`, text: seg.text });
     });
-  } else if (record.audioTranscription?.trim()) {
-    index.push({ ref: 'Lesson transcript', text: record.audioTranscription });
+  } else if ((record.lessonNotes || record.audioTranscription)?.trim()) {
+    index.push({
+      ref: 'Lesson notes from the recording',
+      text: (record.lessonNotes || record.audioTranscription)!,
+    });
   }
 
   (record.photos || []).forEach((photo) => {
@@ -195,7 +217,7 @@ interface IndicatorRule {
 const GENERIC_RULE: IndicatorRule = {
   probe: /(student|teacher|lesson|task|activity|question|group|explain)/i,
   strong: /(all students|every student|consistently|throughout|independent)/i,
-  missing: 'no activity, transcript, note or photo addressed this indicator',
+  missing: 'no activity, lesson note, observer note or photo addressed this indicator',
   strongNote: 'sustained practice evidenced across the captured lesson record',
   presentNote: 'practice evidenced in the captured lesson record',
 };
@@ -239,7 +261,7 @@ const INDICATOR_RULES: Record<string, IndicatorRule> = {
   D3_5: {
     probe: /(why|how|question|ask|analy|compar|justify|evaluat|explain|what if|predict)/i,
     strong: /(why|justify|analy|evaluat|what if|hypothes|critique|compare)/i,
-    missing: 'no questioning was captured in the transcript or notes',
+    missing: 'no questioning was captured in the lesson notes or the observer notes',
     strongNote: 'questioning repeatedly pushes into analysis and justification',
     presentNote: 'questioning is present but largely recall-level',
   },
@@ -335,7 +357,7 @@ export function executeRuleBasedAutoGrade(
         rationale: `Not observable - ${
           index.length
             ? rule.missing
-            : 'no lesson activities, observer notes, transcript or photos have been captured yet'
+            : 'no lesson activities, observer notes, lesson notes or photos have been captured yet'
         }.`,
         evidenceRefs: [],
         domainId: item.domainId,
@@ -387,7 +409,7 @@ export function executeRuleBasedAutoGrade(
   ];
 
   const summaryEvaluation = observed.length
-    ? `Rated ${observed.length} of ${scoredList.length} Framework 2 indicators from the evidence captured (${index.length} evidence items across activities, notes, transcript and photos). ${
+    ? `Rated ${observed.length} of ${scoredList.length} Framework 2 indicators from the evidence captured (${index.length} evidence items across activities, observer notes, lesson notes and photos). ${
         notObservable
           ? `${notObservable} indicators are marked not observable - they were not evidenced by the recording, notes or photos and have been left unscored rather than assumed.`
           : 'All indicators were evidenced.'

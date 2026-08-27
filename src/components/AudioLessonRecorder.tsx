@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Mic, Square, Play, Pause, Upload, Sparkles, Volume2, AlertCircle, RefreshCw, Clock, CheckCircle2, FileText, Copy, Trash2, ScrollText } from 'lucide-react';
-import { AiLessonAnalysis, CareerLevel, TranscriptSegment } from '../types';
+import { AiLessonAnalysis, CareerLevel, LessonInsight } from '../types';
 import { putMedia, getMedia, deleteMedia, blobToBase64, formatBytes } from '../services/mediaStore';
 import { useLanguage } from '../i18n/LanguageContext';
-import { transcribeRecording, formatTranscriptText, TranscriptionProgress } from '../services/transcription';
+import { readLessonInsights, formatLessonNotes, InsightProgress } from '../services/lessonInsights';
 
 /**
  * How large a recording may be before it can no longer be sent for analysis.
@@ -12,8 +12,8 @@ import { transcribeRecording, formatTranscriptText, TranscriptionProgress } from
  * runs, and answers with the plain text "Request Entity Too Large" - which is
  * what surfaced as "Unexpected token 'R'" when the reply was parsed as JSON.
  * Base64 inflates audio by a third on the way out, so three megabytes on disk
- * is about four in the request, leaving room for the transcript and the rest
- * of the envelope. This is a limit on analysing a clip, never on keeping one:
+ * is about four in the request, leaving room for the lesson notes and the
+ * rest of the envelope. This is a limit on analysing a clip, never on keeping one:
  * the recording is stored on the device whatever it weighs.
  */
 const MAX_AUDIO_UPLOAD_BYTES = 3_000_000;
@@ -21,10 +21,10 @@ const MAX_AUDIO_UPLOAD_BYTES = 3_000_000;
 /**
  * Opus at 24 kbps mono. 12 kbps was enough for a mic held to one mouth, but
  * a device at the back of a room hears the teacher distant and reverberant,
- * and that codec floor removed the very detail transcription needs.
+ * and that codec floor removed the very detail the insight pass needs.
  *
  * The budget above no longer decides how much of a lesson can be understood,
- * only how much can be sent to the analysis endpoint whole: transcription
+ * only how much can be sent to the analysis endpoint whole: the insight pass
  * cuts the recording into windows and reads all of it however long it runs.
  */
 const SPEECH_BITS_PER_SECOND = 24_000;
@@ -40,9 +40,18 @@ const SPEECH_LOCALES: Record<string, string> = { en: 'en-US', id: 'id-ID' };
 /**
  * How long to wait before restarting the speech engine after it ends itself.
  * Calling start() straight from the onend handler throws InvalidStateError in
- * Chrome, which would end the transcript for good on the first restart.
+ * Chrome, which would end the live strip for good on the first restart.
  */
 const SPEECH_RESTART_DELAY_MS = 300;
+
+/**
+ * How many phrases the live strip keeps.
+ *
+ * What the browser engine hears is a sign of life and nothing more - it is
+ * never written to the record - so it scrolls a few phrases and lets the rest
+ * go rather than accumulating a log nobody will read.
+ */
+const LIVE_PREVIEW_PHRASES = 3;
 
 /**
  * The notice to show when captured audio is past what the endpoint accepts,
@@ -53,7 +62,7 @@ const describeOversizedAudio = (bytes: number): string | null => {
   if (bytes <= MAX_AUDIO_UPLOAD_BYTES) return null;
   return `This recording is ${formatBytes(bytes)}, past the ${formatBytes(
     MAX_AUDIO_UPLOAD_BYTES
-  )} the analysis endpoint accepts in one piece. It stays saved on this device - press Transcribe audio to have the whole lesson read from the recording, and the analysis will be built on that transcript.`;
+  )} the analysis endpoint accepts in one piece. It stays saved on this device - press Read lesson insights to have the whole lesson read from the recording, and the analysis will be built on those notes.`;
 };
 
 /**
@@ -78,18 +87,18 @@ interface AudioLessonRecorderProps {
   lessonTopic: string;
   learningObjectives?: string;
   observerNotes?: string;
-  onAnalysisComplete: (analysis: AiLessonAnalysis, transcriptText?: string, segments?: TranscriptSegment[]) => void;
+  onAnalysisComplete: (analysis: AiLessonAnalysis, lessonNotes?: string, insights?: LessonInsight[]) => void;
   existingAnalysis?: AiLessonAnalysis;
-  /** Transcript already held on this teacher's observation, restored on open. */
-  initialTranscript?: string;
-  initialSegments?: TranscriptSegment[];
+  /** Lesson notes already held on this teacher's observation, restored on open. */
+  initialLessonNotes?: string;
+  initialInsights?: LessonInsight[];
   /**
-   * Fires on every change so the transcript is stored against the teacher as
-   * it is spoken. Waiting for the AI analysis meant a closed tab, a refused
-   * upload or an appraiser who never pressed Analyze lost the whole record of
-   * what was said.
+   * Fires on every change so the notes are stored against the teacher as soon
+   * as they exist. Waiting for the AI analysis meant a closed tab, a refused
+   * upload or an appraiser who never pressed Analyze lost the whole write-up
+   * of the lesson.
    */
-  onTranscriptChange?: (transcript: string, segments: TranscriptSegment[]) => void;
+  onLessonNotesChange?: (lessonNotes: string, insights: LessonInsight[]) => void;
   /** Owns the recording in the device's media store, and deletes it with it. */
   appraisalId: string;
   /** A recording already held on this device for this observation. */
@@ -108,9 +117,9 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
   observerNotes,
   onAnalysisComplete,
   existingAnalysis,
-  initialTranscript,
-  initialSegments,
-  onTranscriptChange,
+  initialLessonNotes,
+  initialInsights,
+  onLessonNotesChange,
   appraisalId,
   initialAudioClipId,
   onAudioCaptured,
@@ -123,20 +132,22 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
   // Seeded from the stored observation. The parent remounts this component
   // per record id, so the seeding happens once per teacher rather than on
   // every keystroke echoed back down from the form.
-  const [transcript, setTranscript] = useState<string>(initialTranscript || '');
-  const [segments, setSegments] = useState<TranscriptSegment[]>(initialSegments || []);
-  // What the engine is still hearing: shown live, never written to the record
-  // until the engine settles on it.
+  const [lessonNotes, setLessonNotes] = useState<string>(initialLessonNotes || '');
+  const [insights, setInsights] = useState<LessonInsight[]>(initialInsights || []);
+  // The last few phrases the browser engine settled on, and the one it is
+  // still working out. Both are proof the room is being heard and neither is
+  // an observation, so they live and die with the recording.
+  const [liveHeard, setLiveHeard] = useState<string[]>([]);
   const [interimText, setInterimText] = useState('');
-  const [showTranscript, setShowTranscript] = useState(true);
+  const [showNotes, setShowNotes] = useState(true);
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'blocked'>('idle');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
   const [analysisWarning, setAnalysisWarning] = useState<string | null>(null);
   const [audioBytes, setAudioBytes] = useState(0);
-  const [isTranscribing, setIsTranscribing] = useState(false);
-  const [transcribeProgress, setTranscribeProgress] = useState<TranscriptionProgress | null>(null);
-  const [transcribeNotice, setTranscribeNotice] = useState<string | null>(null);
+  const [isReadingInsights, setIsReadingInsights] = useState(false);
+  const [insightProgress, setInsightProgress] = useState<InsightProgress | null>(null);
+  const [insightNotice, setInsightNotice] = useState<string | null>(null);
   const [audioMimeType, setAudioMimeType] = useState<string>('audio/webm');
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -150,38 +161,29 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
   /**
    * Whether the engine is meant to be listening. The engine stops itself on a
    * quiet stretch or a network blip and, until this flag existed, nothing
-   * started it again: a lesson transcribed for the first few minutes and then
-   * went silent for the rest of the observation with no sign anything had
-   * failed. onend restarts only while this is true, so a deliberate stop or
+   * started it again: the strip followed the room for the first few minutes
+   * and then went dead for the rest of the observation with no sign anything
+   * had failed. onend restarts only while this is true, so a deliberate stop or
    * pause still ends the session.
    */
   const speechShouldRunRef = useRef(false);
   const speechRestartTimerRef = useRef<any>(null);
-  // Elapsed seconds, mirrored in a ref so the speech callback can stamp a
-  // segment without being re-created on every tick.
+  // Elapsed seconds, mirrored in a ref so callbacks can read the clock without
+  // being re-created on every tick.
   const recordingTimeRef = useRef(0);
   const finalisedResultsRef = useRef(0);
-  const transcriptRef = useRef<HTMLTextAreaElement | null>(null);
+  const notesRef = useRef<HTMLTextAreaElement | null>(null);
   // The clip itself, held for playback and for the analysis request. It is
   // not state: nothing renders it directly, and re-encoding a half-hour of
   // audio into a base64 string on every render is exactly what to avoid.
   const audioBlobRef = useRef<Blob | null>(null);
   const audioClipIdRef = useRef<string | undefined>(initialAudioClipId);
   const audioUrlRef = useRef<string | null>(null);
-  /**
-   * Seconds already captured in earlier recordings of this same observation.
-   * A lesson is often taken in several passes - more so now the endpoint only
-   * accepts so much audio at once - and a transcript that restarted at 00:00
-   * each time could not be read, cited or scored as one timeline.
-   */
-  const transcriptOffsetRef = useRef(
-    (initialSegments || []).reduce((latest, seg) => Math.max(latest, seg.startSeconds || 0), 0)
-  );
-  // What the observation was last told the transcript is. Compared rather
-  // than counted, so merely opening a record - or React re-running effects on
+  // What the observation was last told the notes are. Compared rather than
+  // counted, so merely opening a record - or React re-running effects on
   // mount - cannot report a change that never happened.
   const lastPublishedRef = useRef(
-    `${(initialSegments || []).length}|${initialTranscript || ''}`
+    `${(initialInsights || []).length}|${initialLessonNotes || ''}`
   );
 
   /**
@@ -244,6 +246,7 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
       } catch (e) {}
       speechRecognitionRef.current = null;
     }
+    setLiveHeard([]);
     setInterimText('');
   };
 
@@ -251,7 +254,12 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
    * Open a speech session and keep reopening it for as long as the lesson is
    * being recorded. Each session is a fresh instance: a stopped one cannot be
    * restarted, and its results list starts from zero again, so the count of
-   * lines already written to the transcript resets with it.
+   * phrases already shown resets with it.
+   *
+   * This exists so the appraiser can see the room is being heard while the
+   * lesson runs. Nothing it produces is kept: the notes for the observation
+   * are read from the recording afterwards, by a model that hears the whole
+   * room rather than the nearest voice.
    */
   const startSpeechRecognition = () => {
     const SpeechRecognition =
@@ -269,39 +277,35 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
         recognition.lang = SPEECH_LOCALES[language] || 'en-US';
 
         recognition.onresult = (event: any) => {
-          // Only append results the engine has finalised, and only ones not
-          // already recorded - onresult replays the whole results list each
-          // time, which previously duplicated the transcript on every event.
+          // Only phrases the engine has finalised, and only ones not already
+          // shown - onresult replays the whole results list each time, which
+          // would otherwise repeat the same phrase on every event.
           let pending = '';
 
           for (let i = finalisedResultsRef.current; i < event.results.length; i++) {
             const result = event.results[i];
             if (!result.isFinal) {
-              // Not settled yet: shown under the transcript so the appraiser
-              // can see the capture is still following the room.
+              // Not settled yet: shown greyed at the end of the strip so the
+              // appraiser can see the capture is still following the room.
               pending = `${pending} ${String(result[0].transcript)}`.trim();
               continue;
             }
 
-            const text = String(result[0].transcript).trim();
+            const heard = String(result[0].transcript).trim();
             finalisedResultsRef.current = i + 1;
-            if (!text) continue;
+            if (!heard) continue;
 
-            const at = transcriptOffsetRef.current + recordingTimeRef.current;
-            const stamp = formatTime(at);
-
-            setSegments((prev) => [...prev, { startSeconds: at, timeLabel: stamp, text }]);
-            setTranscript((prev) => (prev ? `${prev}\n[${stamp}] ${text}` : `[${stamp}] ${text}`));
+            setLiveHeard((prev) => [...prev, heard].slice(-LIVE_PREVIEW_PHRASES));
           }
 
           setInterimText(pending);
         };
 
         recognition.onerror = (event: any) => {
-          // A refused microphone will refuse every retry, so stop asking and
-          // leave the appraiser the recording and the typed transcript. Every
-          // other error - no-speech, network, aborted - is transient and is
-          // left to onend to recover from.
+          // A refused microphone will refuse every retry, so stop asking. The
+          // recording itself is unaffected, and it is the recording the notes
+          // come from. Every other error - no-speech, network, aborted - is
+          // transient and is left to onend to recover from.
           if (event?.error === 'not-allowed' || event?.error === 'service-not-allowed') {
             speechShouldRunRef.current = false;
           }
@@ -336,8 +340,8 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
       // and gates it out, while auto gain pumps between quiet and loud
       // stretches of the lesson. Turning them on is what made the recordings
       // capture neither the teacher nor the room. A classroom wants the raw
-      // signal - the transcription model is better at the noise than the
-      // filters are.
+      // signal - the model reading it is better at the noise than the
+      // filters are, and the noise is evidence in its own right.
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
@@ -392,14 +396,14 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
       mediaRecorder.start(1000); // 1 sec chunks
       recordingTimeRef.current = 0;
       finalisedResultsRef.current = 0;
-      // Optional browser speech recognition for live text capture, restarted
-      // for as long as the lesson runs.
+      // Optional browser speech recognition, purely so the appraiser can see
+      // the room is being heard. Restarted for as long as the lesson runs.
       startSpeechRecognition();
-      // Deliberately keeps whatever is already transcribed: a second pass
-      // continues the lesson's timeline instead of erasing the first. Clear
-      // Transcript is there for starting the record over.
+      // Notes already on the observation are left alone: they belong to the
+      // recording they were read from, and this one has not been read yet.
+      setLiveHeard([]);
       setInterimText('');
-      setShowTranscript(true);
+      setShowNotes(true);
       setIsRecording(true);
       setIsPaused(false);
       setRecordingTime(0);
@@ -420,7 +424,6 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
   const stopRecording = () => {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
-      transcriptOffsetRef.current += recordingTimeRef.current;
       setIsRecording(false);
       setIsPaused(false);
       if (timerIntervalRef.current) {
@@ -450,8 +453,8 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
       if (timerIntervalRef.current) {
         clearInterval(timerIntervalRef.current);
       }
-      // The clock stops with the recorder, so anything the engine heard while
-      // paused would be stamped at the moment the pause began.
+      // Nothing to listen for while the recorder is stopped, and a strip that
+      // kept scrolling would suggest the lesson was still being captured.
       stopSpeechRecognition();
     }
   };
@@ -501,86 +504,91 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
   };
 
   /**
-   * Transcribe the stored recording against the audio itself.
+   * Read the stored recording for what it shows, and write it up as notes.
    *
-   * This is the transcript the observation keeps. What the browser captured
-   * while the lesson ran was a live preview - it hears one near voice, in one
-   * language, and cannot say who spoke - so a successful pass replaces it
-   * rather than being merged into it. The appraiser is asked first, because
-   * anything they typed or corrected by hand goes with it.
+   * This is the write-up the observation keeps. What the browser heard while
+   * the lesson ran was never kept - it is a dictation engine pointed at a
+   * room it cannot hear properly - so there is nothing to merge with and the
+   * pass simply produces the notes. The appraiser is asked first only where
+   * notes already exist, because anything they wrote or corrected by hand
+   * goes with them.
    */
-  const handleTranscribeRecording = async () => {
+  const handleReadInsights = async () => {
     const audioBlob = audioBlobRef.current;
     if (!audioBlob) {
-      setAnalysisError('There is no recording on this observation to transcribe.');
+      setAnalysisError('There is no recording on this observation to read.');
       return;
     }
 
-    if (transcript.trim()) {
+    if (lessonNotes.trim()) {
       const confirmed = window.confirm(
-        'Transcribe the recording from the audio? This replaces the transcript currently held ' +
-          'for this observation, including any lines you have typed or corrected.'
+        'Read the recording for lesson insights? This replaces the notes currently held for ' +
+          'this observation, including anything you have written or corrected.'
       );
       if (!confirmed) return;
     }
 
-    setIsTranscribing(true);
+    setIsReadingInsights(true);
     setAnalysisError(null);
-    setTranscribeNotice(null);
-    setTranscribeProgress({ completed: 0, total: 0 });
+    setInsightNotice(null);
+    setInsightProgress({ completed: 0, total: 0 });
 
     try {
-      const result = await transcribeRecording(audioBlob, {
+      const result = await readLessonInsights(audioBlob, {
         language,
-        onProgress: setTranscribeProgress,
+        onProgress: setInsightProgress,
       });
 
       if (!result.totalWindows) {
-        setAnalysisError('This recording could not be read as audio, so there was nothing to transcribe.');
+        setAnalysisError('This recording could not be read as audio, so there was nothing to observe.');
         return;
       }
 
-      if (!result.segments.length) {
+      if (!result.insights.length) {
         setAnalysisError(
           result.failedWindows === result.totalWindows
-            ? 'The transcription service could not be reached. The recording is still saved on this device - try again in a moment.'
-            : 'No intelligible speech was found in this recording. Check that the device was near enough to the class to hear the lesson.'
+            ? 'The lesson could not be read. The recording is still saved on this device - try again in a moment.'
+            : 'Nothing observable was found in this recording. Check that the device was near enough to the class to hear the lesson.'
         );
         return;
       }
 
-      setSegments(result.segments);
-      setTranscript(formatTranscriptText(result.segments));
+      setInsights(result.insights);
+      setLessonNotes(formatLessonNotes(result.insights));
+      setLiveHeard([]);
       setInterimText('');
       setCopyState('idle');
-      // Every stamp now runs from the start of this recording, so the offset
-      // any later live capture counts from has to start there too.
-      transcriptOffsetRef.current = 0;
-      setShowTranscript(true);
+      setShowNotes(true);
 
-      setTranscribeNotice(
+      const environmentNotes = result.insights.filter(
+        (insight) => insight.focus === 'Classroom Environment'
+      ).length;
+
+      setInsightNotice(
         result.failedWindows
-          ? `Transcribed ${result.totalWindows - result.failedWindows} of ${result.totalWindows} parts of the lesson. ` +
-              `${result.failedWindows} could not be read and are missing from the transcript - run it again to fill the gaps.`
-          : `Transcribed the full recording: ${result.segments.length} timestamped lines.`
+          ? `Read ${result.totalWindows - result.failedWindows} of ${result.totalWindows} parts of the lesson. ` +
+              `${result.failedWindows} could not be read and are missing from the notes - run it again to fill the gaps.`
+          : `Read the full recording: ${result.insights.length} timestamped notes, ` +
+              `${result.insights.length - environmentNotes} on the lesson activities and ` +
+              `${environmentNotes} on the classroom environment.`
       );
     } catch (err: any) {
-      console.error('Transcription failed:', err);
+      console.error('The insight pass failed:', err);
       setAnalysisError(
-        err?.message || 'The recording could not be transcribed. It is still saved on this device.'
+        err?.message || 'The recording could not be read. It is still saved on this device.'
       );
     } finally {
-      setIsTranscribing(false);
-      setTranscribeProgress(null);
+      setIsReadingInsights(false);
+      setInsightProgress(null);
     }
   };
 
   // Trigger Gemini AI Lesson Analysis
   const handleAnalyzeWithAI = async () => {
-    const writtenEvidence = (transcript || '').trim() || (observerNotes || '').trim();
+    const writtenEvidence = (lessonNotes || '').trim() || (observerNotes || '').trim();
     const audioBlob = audioBlobRef.current;
     if (!audioBlob && !writtenEvidence) {
-      setAnalysisError('Please record audio, upload an audio file, or provide lesson transcript/notes for AI analysis.');
+      setAnalysisError('Please record audio, upload an audio file, or provide lesson notes for AI analysis.');
       return;
     }
 
@@ -591,8 +599,8 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
     if (audioBlob && !audioFits && !writtenEvidence) {
       setAnalysisError(
         `This recording is ${formatBytes(audioBlob.size)} and cannot be sent for analysis in one piece. It ` +
-          'stays saved on this device - press Transcribe audio to have the whole lesson read from the ' +
-          'recording, then analyse it from that transcript.'
+          'stays saved on this device - press Read lesson insights to have the whole lesson read from the ' +
+          'recording, then analyse it from those notes.'
       );
       return;
     }
@@ -606,7 +614,7 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
         // as binary, and only this one request needs it as base64.
         audioBase64: audioFits && audioBlob ? await blobToBase64(audioBlob) : null,
         mimeType: audioMimeType,
-        transcript: transcript || observerNotes || 'Lesson observation discussion and active instruction dialogue.',
+        lessonNotes: lessonNotes || observerNotes || 'Lesson observation discussion and active instruction dialogue.',
         teacherName: teacherName || 'Observed Teacher',
         subject: subject || 'Subject',
         careerLevel,
@@ -626,7 +634,7 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
       if (!json) {
         throw new Error(
           res.status === 413
-            ? 'The recording was too large for the server to accept in one piece. Press Transcribe audio to have it read window by window, then analyse from that transcript.'
+            ? 'The recording was too large for the server to accept in one piece. Press Read lesson insights to have it read window by window, then analyse from those notes.'
             : `The analysis service returned HTTP ${res.status} without a readable error.`
         );
       }
@@ -634,7 +642,7 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
         throw new Error(json.error || 'Failed to analyze lesson');
       }
 
-      onAnalysisComplete(json.data, transcript, segments);
+      onAnalysisComplete(json.data, lessonNotes, insights);
     } catch (err: any) {
       console.error('AI Analysis failed:', err);
       setAnalysisError(err.message || 'An error occurred while contacting the Gemini AI service.');
@@ -675,23 +683,16 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
   }, [initialAudioClipId]);
 
   // Hand every change up to the observation, which autosaves it against this
-  // teacher. Runs for typed corrections too, not only for captured speech.
+  // teacher. Runs for typed corrections too, not only for a completed pass.
   useEffect(() => {
-    const signature = `${segments.length}|${transcript}`;
+    const signature = `${insights.length}|${lessonNotes}`;
     if (signature === lastPublishedRef.current) return;
     lastPublishedRef.current = signature;
-    onTranscriptChange?.(transcript, segments);
-  }, [transcript, segments]);
+    onLessonNotesChange?.(lessonNotes, insights);
+  }, [lessonNotes, insights]);
 
-  // Keep the newest line in view while the lesson is running, so the panel
-  // reads as a live feed rather than something to scroll after the fact.
-  useEffect(() => {
-    if (!isRecording || !transcriptRef.current) return;
-    transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
-  }, [transcript, interimText, isRecording]);
-
-  const handleCopyTranscript = async () => {
-    const text = transcript.trim();
+  const handleCopyNotes = async () => {
+    const text = lessonNotes.trim();
     if (!text) return;
     try {
       await navigator.clipboard.writeText(text);
@@ -701,8 +702,8 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
       // The clipboard API is refused without a user gesture in some browsers
       // and absent entirely over plain http, so fall back to selecting the
       // text and let the appraiser press the shortcut.
-      transcriptRef.current?.focus();
-      transcriptRef.current?.select();
+      notesRef.current?.focus();
+      notesRef.current?.select();
       setCopyState('blocked');
     }
   };
@@ -711,16 +712,21 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
   // and a ref cannot re-render the controls that depend on it.
   const hasAudio = audioBytes > 0;
 
-  const handleClearTranscript = () => {
-    if (!transcript && segments.length === 0) return;
+  // The split the appraiser is told about: the pass is meant to come back with
+  // both the lesson and the room, and a count of zero on either side is the
+  // one thing that says it did not.
+  const activityNoteCount = insights.filter((insight) => insight.focus === 'Lesson Activity').length;
+
+  const handleClearNotes = () => {
+    if (!lessonNotes && insights.length === 0) return;
     const confirmed = window.confirm(
-      'Clear the transcript for this observation? The captured lines are removed from the teacher\'s record.'
+      'Clear the lesson notes for this observation? They are removed from the teacher\'s record.'
     );
     if (!confirmed) return;
-    setTranscript('');
-    setSegments([]);
+    setLessonNotes('');
+    setInsights([]);
+    setLiveHeard([]);
     setInterimText('');
-    transcriptOffsetRef.current = 0;
     setCopyState('idle');
   };
 
@@ -753,7 +759,8 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
               </span>
             </h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Record live classroom audio or upload audio to evaluate talk time and cognitive depth.
+              Record or upload the lesson, then have the recording read back as timestamped notes on
+              the activities and the classroom environment.
             </p>
           </div>
         </div>
@@ -894,11 +901,11 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
             id="btn-run-ai-analysis"
             type="button"
             onClick={handleAnalyzeWithAI}
-            disabled={isAnalyzing || isRecording || (!hasAudio && !transcript && !observerNotes)}
+            disabled={isAnalyzing || isRecording || (!hasAudio && !lessonNotes && !observerNotes)}
             className={`w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-semibold text-sm transition shadow-sm ${
               isAnalyzing
                 ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
-                : !hasAudio && !transcript && !observerNotes
+                : !hasAudio && !lessonNotes && !observerNotes
                 ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
                 : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-100 cursor-pointer'
             }`}
@@ -918,20 +925,21 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
         </div>
       </div>
 
-      {/* Live Transcript - open by default and left open while recording, so
-          the lesson can be read, corrected and copied as it is spoken. */}
+      {/* Lesson notes read from the recording. Open by default: this is the
+          write-up that goes on the observation, and it is meant to be read and
+          corrected rather than found. */}
       <div className="mt-4 pt-3 border-t border-slate-100">
         <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
           <div className="flex items-center gap-2 flex-wrap">
             <button
               type="button"
-              onClick={() => setShowTranscript((open) => !open)}
+              onClick={() => setShowNotes((open) => !open)}
               className="text-xs font-semibold text-slate-600 hover:text-slate-900 cursor-pointer flex items-center gap-1.5"
-              aria-expanded={showTranscript}
+              aria-expanded={showNotes}
             >
               <FileText className="w-3.5 h-3.5 text-slate-400" />
-              <span>Live Transcript &amp; Classroom Dialogue</span>
-              <span className={`text-slate-400 transition-transform ${showTranscript ? 'rotate-180' : ''}`}>▼</span>
+              <span>Lesson Notes from the Recording</span>
+              <span className={`text-slate-400 transition-transform ${showNotes ? 'rotate-180' : ''}`}>▼</span>
             </button>
 
             {isRecording && !isPaused && (
@@ -941,9 +949,10 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
               </span>
             )}
 
-            {segments.length > 0 && (
+            {insights.length > 0 && (
               <span className="text-[11px] text-slate-500">
-                {segments.length} timestamped {segments.length === 1 ? 'line' : 'lines'}
+                {insights.length} timestamped {insights.length === 1 ? 'note' : 'notes'} -{' '}
+                {activityNoteCount} on the lesson, {insights.length - activityNoteCount} on the environment
               </span>
             )}
           </div>
@@ -956,56 +965,56 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
               <span className="text-[11px] font-medium text-amber-600">Selected - press Cmd/Ctrl+C</span>
             )}
             <button
-              id="btn-transcribe-recording"
+              id="btn-read-lesson-insights"
               type="button"
-              onClick={handleTranscribeRecording}
-              disabled={!hasAudio || isTranscribing || isRecording}
+              onClick={handleReadInsights}
+              disabled={!hasAudio || isReadingInsights || isRecording}
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition ${
-                hasAudio && !isTranscribing && !isRecording
+                hasAudio && !isReadingInsights && !isRecording
                   ? 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200 cursor-pointer'
                   : 'bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed'
               }`}
-              title="Transcribe the recording from the audio, with the teacher and the class told apart"
+              title="Read the recording back as timestamped notes on the lesson activities and the classroom environment"
             >
-              {isTranscribing ? (
+              {isReadingInsights ? (
                 <RefreshCw className="w-3.5 h-3.5 animate-spin" />
               ) : (
                 <ScrollText className="w-3.5 h-3.5" />
               )}
               <span>
-                {isTranscribing
-                  ? transcribeProgress?.total
-                    ? `Transcribing ${transcribeProgress.completed}/${transcribeProgress.total}`
+                {isReadingInsights
+                  ? insightProgress?.total
+                    ? `Reading ${insightProgress.completed}/${insightProgress.total}`
                     : 'Reading audio...'
-                  : 'Transcribe audio'}
+                  : 'Read lesson insights'}
               </span>
             </button>
             <button
-              id="btn-copy-transcript"
+              id="btn-copy-lesson-notes"
               type="button"
-              onClick={handleCopyTranscript}
-              disabled={!transcript.trim()}
+              onClick={handleCopyNotes}
+              disabled={!lessonNotes.trim()}
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition ${
-                transcript.trim()
+                lessonNotes.trim()
                   ? 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200 cursor-pointer'
                   : 'bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed'
               }`}
-              title="Copy the full timestamped transcript"
+              title="Copy the full timestamped lesson notes"
             >
               <Copy className="w-3.5 h-3.5" />
               <span>Copy</span>
             </button>
             <button
-              id="btn-clear-transcript"
+              id="btn-clear-lesson-notes"
               type="button"
-              onClick={handleClearTranscript}
-              disabled={!transcript.trim() && segments.length === 0}
+              onClick={handleClearNotes}
+              disabled={!lessonNotes.trim() && insights.length === 0}
               className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition ${
-                transcript.trim() || segments.length
+                lessonNotes.trim() || insights.length
                   ? 'bg-white hover:bg-rose-50 text-slate-600 hover:text-rose-600 border-slate-200 cursor-pointer'
                   : 'bg-slate-50 text-slate-300 border-slate-100 cursor-not-allowed'
               }`}
-              title="Clear the transcript held for this observation"
+              title="Clear the lesson notes held for this observation"
             >
               <Trash2 className="w-3.5 h-3.5" />
               <span>Clear</span>
@@ -1013,22 +1022,37 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
           </div>
         </div>
 
-        {isTranscribing && (
+        {/* What the browser engine is hearing. Deliberately set apart from the
+            notes and labelled as unsaved: it is a sign the room is being
+            captured, not a record of the lesson. */}
+        {isRecording && (
+          <div className="mb-2 p-2.5 rounded-xl bg-slate-50 border border-dashed border-slate-200">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">
+              Listening - a live check, not saved to the record
+            </p>
+            <p className="text-[11px] text-slate-500 font-mono leading-relaxed break-words">
+              {liveHeard.join(' ') || (interimText ? '' : 'Waiting for the room...')}
+              {interimText && <span className="text-slate-400"> {interimText}...</span>}
+            </p>
+          </div>
+        )}
+
+        {isReadingInsights && (
           <div className="mb-2 p-2.5 rounded-xl bg-indigo-50 border border-indigo-100">
             <p className="text-[11px] text-indigo-800 font-medium mb-1.5">
-              {transcribeProgress?.total
-                ? `Transcribing the lesson from the audio - part ${Math.min(
-                    transcribeProgress.completed + 1,
-                    transcribeProgress.total
-                  )} of ${transcribeProgress.total}. Leave this open.`
+              {insightProgress?.total
+                ? `Reading the lesson from the audio - part ${Math.min(
+                    insightProgress.completed + 1,
+                    insightProgress.total
+                  )} of ${insightProgress.total}. Leave this open.`
                 : 'Reading the recording. A long lesson takes a moment to prepare.'}
             </p>
             <div className="h-1.5 rounded-full bg-indigo-100 overflow-hidden">
               <div
                 className="h-full bg-indigo-500 rounded-full transition-all duration-300"
                 style={{
-                  width: transcribeProgress?.total
-                    ? `${Math.round((transcribeProgress.completed / transcribeProgress.total) * 100)}%`
+                  width: insightProgress?.total
+                    ? `${Math.round((insightProgress.completed / insightProgress.total) * 100)}%`
                     : '10%',
                 }}
               />
@@ -1036,43 +1060,37 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
           </div>
         )}
 
-        {transcribeNotice && !isTranscribing && (
+        {insightNotice && !isReadingInsights && (
           <div className="mb-2 flex items-start gap-2 p-2.5 rounded-xl bg-emerald-50 border border-emerald-100">
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0 mt-0.5" />
-            <p className="text-[11px] text-emerald-800 leading-snug">{transcribeNotice}</p>
+            <p className="text-[11px] text-emerald-800 leading-snug">{insightNotice}</p>
           </div>
         )}
 
-        {showTranscript && (
+        {showNotes && (
           <>
             <textarea
-              id="input-audio-transcript"
-              ref={transcriptRef}
-              value={transcript}
+              id="input-lesson-notes"
+              ref={notesRef}
+              value={lessonNotes}
               onChange={(e) => {
-                setTranscript(e.target.value);
+                setLessonNotes(e.target.value);
                 setCopyState('idle');
               }}
-              placeholder="Speech is transcribed here with a [mm:ss] stamp as the lesson runs - a live preview of what the room is being heard as. Press Transcribe audio afterwards for the accurate pass, which reads the recording itself and tells the teacher and the class apart. Paste or correct classroom dialogue at any time; it is saved with the observation and cited by the AI analysis."
-              rows={isRecording ? 10 : 6}
+              placeholder="Once the lesson is recorded, press Read lesson insights. The recording is read back minute by minute and written up here as timestamped notes - what the class was doing, and what the room was like - each one marked with whether it rests on the teacher, the students or the noise of the room. Correct anything that does not match what you saw, or write your own notes straight in; they are saved with the observation and cited by the AI analysis."
+              rows={6}
               className="w-full bg-slate-50 text-slate-800 text-xs rounded-xl p-3 border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition resize-y font-mono leading-relaxed"
             />
 
-            {interimText && (
-              <p className="mt-1.5 text-[11px] text-slate-400 font-mono truncate">
-                [{formatTime(transcriptOffsetRef.current + recordingTime)}] {interimText}...
-              </p>
-            )}
-
             <p className="mt-1.5 text-[11px] text-slate-400">
-              Saved to {teacherName ? `${teacherName}'s` : "this teacher's"} observation as it is captured, and
-              carried into the report and the AI analysis.
+              Saved to {teacherName ? `${teacherName}'s` : "this teacher's"} observation, and carried
+              into the report and the AI analysis.
             </p>
           </>
         )}
       </div>
 
-      {/* Oversized-audio notice: the analysis still runs, from the transcript */}
+      {/* Oversized-audio notice: the analysis still runs, from the notes */}
       {analysisWarning && !analysisError && (
         <div className="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-xs flex items-start gap-2">
           <AlertCircle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />

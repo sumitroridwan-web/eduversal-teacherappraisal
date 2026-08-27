@@ -75,30 +75,56 @@ describe('capture mode', () => {
   });
 });
 
-describe('lesson transcript', () => {
-  function withTranscript(): TeacherAppraisalRecord {
+describe('lesson notes from the recording', () => {
+  function withLessonNotes(): TeacherAppraisalRecord {
     const record: any = createBlankAppraisal();
-    record.audioTranscription = '[00:12] what do you notice about the graph';
-    record.transcriptSegments = [
-      { startSeconds: 12, timeLabel: '00:12', text: 'what do you notice about the graph' },
+    record.lessonNotes =
+      '[00:12] Lesson Activity - The teacher opened with a recall question about the graph. ' +
+      '(teacher speech; "what do you notice about the graph")';
+    record.lessonInsights = [
+      {
+        startSeconds: 12,
+        timeLabel: '00:12',
+        focus: 'Lesson Activity',
+        note: 'The teacher opened with a recall question about the graph.',
+        heardFrom: ['Teacher speech'],
+        quote: 'what do you notice about the graph',
+      },
     ];
     return record as TeacherAppraisalRecord;
   }
 
-  test('shows the transcript on the sheet rather than behind a disclosure', () => {
-    const html = render(withTranscript());
-    assert.ok(html.includes('Live Transcript'), 'the transcript panel is on the page');
+  test('shows the notes on the sheet rather than behind a disclosure', () => {
+    const html = render(withLessonNotes());
+    assert.ok(html.includes('Lesson Notes from the Recording'), 'the notes panel is on the page');
     assert.ok(!/Scratchpad/.test(html), 'it is no longer a collapsed scratchpad');
   });
 
-  test('restores the transcript stored against the teacher', () => {
-    const html = render(withTranscript());
-    assert.ok(html.includes('[00:12] what do you notice about the graph'));
-    assert.ok(/1 timestamped line/.test(html), 'and counts what was captured');
+  test('restores the notes stored against the teacher', () => {
+    const html = render(withLessonNotes());
+    assert.ok(html.includes('The teacher opened with a recall question about the graph.'));
+    assert.ok(/1 timestamped note/.test(html), 'and counts what was written up');
+  });
+
+  test('says how the notes divide between the lesson and the room', () => {
+    // The pass is meant to come back with both. A count of zero on either side
+    // is the one thing that tells an appraiser it did not.
+    const html = render(withLessonNotes());
+    assert.ok(/1 on the lesson, 0 on the environment/.test(html));
+  });
+
+  test('opens an observation recorded before the insight pass with its transcript', () => {
+    const record: any = createBlankAppraisal();
+    record.audioTranscription = '[00:12] Teacher: what do you notice about the graph';
+    const html = render(record as TeacherAppraisalRecord);
+    assert.ok(
+      html.includes('[00:12] Teacher: what do you notice about the graph'),
+      'a lesson captured under the old pass is still readable on the sheet'
+    );
   });
 
   test('offers a copy control once there is something to copy', () => {
-    assert.ok(render(withTranscript()).includes('btn-copy-transcript'));
+    assert.ok(render(withLessonNotes()).includes('btn-copy-lesson-notes'));
   });
 });
 

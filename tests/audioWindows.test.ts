@@ -1,6 +1,6 @@
 /**
  * A lesson recording is longer than any one request may carry, so it is cut
- * into windows before it is transcribed.
+ * into windows before it is read.
  *
  * What matters about that cut is arithmetic, and it is checked here without a
  * browser: that no window is large enough to be refused at the edge, that the
@@ -16,13 +16,13 @@ import {
   maxSamplesPerWindow,
   encodeWav,
   MAX_WINDOW_BYTES,
-  TRANSCRIBE_SAMPLE_RATE,
+  SPEECH_SAMPLE_RATE,
 } from '../src/services/audioWindows';
-import { formatTranscriptText } from '../src/services/transcription';
-import type { TranscriptSegment } from '../src/types';
+import { formatLessonNotes } from '../src/services/lessonInsights';
+import type { LessonInsight } from '../src/types';
 
 const WAV_HEADER_BYTES = 44;
-const seconds = (n: number) => n * TRANSCRIBE_SAMPLE_RATE;
+const seconds = (n: number) => n * SPEECH_SAMPLE_RATE;
 
 describe('planWindows', () => {
   test('leaves a short lesson in one piece', () => {
@@ -39,7 +39,7 @@ describe('planWindows', () => {
         const bytes = WAV_HEADER_BYTES + plan.sampleCount * 2;
         assert.ok(
           bytes <= MAX_WINDOW_BYTES,
-          `a ${lesson / TRANSCRIBE_SAMPLE_RATE}s lesson produced a ${bytes} byte window`
+          `a ${lesson / SPEECH_SAMPLE_RATE}s lesson produced a ${bytes} byte window`
         );
       }
     }
@@ -62,8 +62,8 @@ describe('planWindows', () => {
 
   test('reports each window start in seconds, matching its sample offset', () => {
     for (const plan of planWindows(seconds(45 * 60))) {
-      assert.equal(plan.startSeconds, plan.startSample / TRANSCRIBE_SAMPLE_RATE);
-      assert.equal(plan.durationSeconds, plan.sampleCount / TRANSCRIBE_SAMPLE_RATE);
+      assert.equal(plan.startSeconds, plan.startSample / SPEECH_SAMPLE_RATE);
+      assert.equal(plan.durationSeconds, plan.sampleCount / SPEECH_SAMPLE_RATE);
     }
   });
 
@@ -103,7 +103,7 @@ describe('encodeWav', () => {
     assert.equal(ascii(36, 4), 'data');
     assert.equal(view.getUint16(20, true), 1, 'not flagged as PCM');
     assert.equal(view.getUint16(22, true), 1, 'not flagged as mono');
-    assert.equal(view.getUint32(24, true), TRANSCRIBE_SAMPLE_RATE);
+    assert.equal(view.getUint32(24, true), SPEECH_SAMPLE_RATE);
     assert.equal(view.getUint16(34, true), 16, 'not flagged as 16-bit');
   });
 
@@ -125,28 +125,57 @@ describe('encodeWav', () => {
   });
 });
 
-describe('formatTranscriptText', () => {
-  const line = (over: Partial<TranscriptSegment>): TranscriptSegment => ({
+describe('formatLessonNotes', () => {
+  const note = (over: Partial<LessonInsight>): LessonInsight => ({
     startSeconds: 0,
     timeLabel: '00:00',
-    text: 'text',
+    focus: 'Lesson Activity',
+    note: 'The teacher set the task.',
+    heardFrom: ['Teacher speech'],
     ...over,
   });
 
-  test('leads every line with the stamp citations are anchored to', () => {
-    const text = formatTranscriptText([
-      line({ timeLabel: '00:05', speaker: 'Teacher', text: 'What do you notice?' }),
-      line({ timeLabel: '00:09', speaker: 'Students', text: 'It floats!' }),
+  test('leads every note with the stamp citations are anchored to', () => {
+    const text = formatLessonNotes([
+      note({
+        timeLabel: '00:05',
+        note: 'The teacher opened with a recall question about the graph.',
+        heardFrom: ['Teacher speech'],
+        quote: 'what do you notice about the graph',
+      }),
+      note({
+        timeLabel: '00:09',
+        focus: 'Classroom Environment',
+        note: 'Several students answered together without being nominated.',
+        heardFrom: ['Student speech', 'Classroom sound'],
+      }),
     ]);
-    assert.equal(text, '[00:05] Teacher: What do you notice?\n[00:09] Students: It floats!');
+
+    assert.equal(
+      text,
+      '[00:05] Lesson Activity - The teacher opened with a recall question about the graph. ' +
+        '(teacher speech; "what do you notice about the graph")\n' +
+        '[00:09] Classroom Environment - Several students answered together without being ' +
+        'nominated. (student speech, class noise)'
+    );
   });
 
-  test('names nobody when the audio could not say who spoke', () => {
-    assert.equal(formatTranscriptText([line({ speaker: 'Unclear', text: 'sit down' })]), '[00:00] sit down');
-    assert.equal(formatTranscriptText([line({ text: 'sit down' })]), '[00:00] sit down');
+  test('carries the words a note rests on, so a rating cited to it can be checked', () => {
+    // An appraisal that affects progression has to be able to show what was
+    // said. A note summarising a moment cannot do that on its own, so the
+    // quotation travels with it into the text the citation checker searches.
+    const text = formatLessonNotes([note({ quote: 'so why did the volume change' })]);
+    assert.match(text, /"so why did the volume change"/);
+  });
+
+  test('says what a note rests on even where nobody was quoted', () => {
+    const text = formatLessonNotes([
+      note({ focus: 'Classroom Environment', note: 'Chairs scraped throughout the transition.', heardFrom: ['Classroom sound'] }),
+    ]);
+    assert.equal(text, '[00:00] Classroom Environment - Chairs scraped throughout the transition. (class noise)');
   });
 
   test('has nothing to render for an empty lesson', () => {
-    assert.equal(formatTranscriptText([]), '');
+    assert.equal(formatLessonNotes([]), '');
   });
 });

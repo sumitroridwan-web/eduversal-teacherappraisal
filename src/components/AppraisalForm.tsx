@@ -1024,7 +1024,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
             disabled={!hasObserverNotes || isAutoGrading}
             title={
               hasObserverNotes
-                ? 'Score the indicators from these notes, together with any activities, transcript and photos captured'
+                ? 'Score the indicators from these notes, together with any activities, lesson notes and photos captured'
                 : 'Write or paste your lesson notes first'
             }
             className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-teal-600 hover:from-indigo-700 hover:to-teal-700 disabled:from-slate-300 disabled:to-slate-300 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-sm min-h-[40px] w-full sm:w-auto shrink-0"
@@ -1087,8 +1087,8 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
         {/* Stated plainly: the button grades from whatever was captured, and
             what it produces is a suggestion until the appraiser confirms it. */}
         <p className="text-[11px] text-slate-500 leading-relaxed">
-          Scoring reads these notes alongside any lesson activities, audio transcript and captioned
-          photos you have captured. Anything the notes do not speak to is returned as
+          Scoring reads these notes alongside any lesson activities, notes read from the recording
+          and captioned photos you have captured. Anything the notes do not speak to is returned as
           <strong className="text-slate-600"> not observable</strong> rather than guessed, and every
           suggested rating stays marked as AI-suggested until you confirm it as your own judgement.
         </p>
@@ -1104,7 +1104,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
       {/* Live Audio Recorder & AI Analyzer Widget */}
       <AudioLessonRecorder
         // Keyed by record so opening another teacher's observation reseeds the
-        // recorder with that teacher's transcript instead of carrying one over.
+        // recorder with that teacher's notes instead of carrying one over.
         key={record.id}
         appraisalId={record.id}
         teacherName={record.teacherName}
@@ -1115,8 +1115,12 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
         learningObjectives={record.learningObjectives}
         observerNotes={record.generalObserverNotes}
         existingAnalysis={record.aiAnalysis}
-        initialTranscript={record.audioTranscription}
-        initialSegments={record.transcriptSegments}
+        // An observation recorded before the audio pass moved to insights has
+        // its verbatim transcript under the old field. It is still the written
+        // record of that lesson, so it opens as the notes rather than as
+        // nothing at all.
+        initialLessonNotes={record.lessonNotes ?? record.audioTranscription}
+        initialInsights={record.lessonInsights}
         initialAudioClipId={record.audioClipId}
         onAudioCaptured={({ clipId, mimeType, durationSeconds }) => {
           // The clip stays on the device; the observation only learns where
@@ -1129,23 +1133,23 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
             audioDurationSeconds: durationSeconds || prev.audioDurationSeconds,
           }));
         }}
-        onTranscriptChange={(transcriptText, segments) => {
-          // Held on the record as it is spoken: autosave then writes it to
-          // this teacher's observation, so the transcript survives a closed
+        onLessonNotesChange={(notes, insights) => {
+          // Held on the record as soon as they exist: autosave then writes
+          // them to this teacher's observation, so the notes survive a closed
           // tab or an analysis that is never run.
           setRecord((prev) => ({
             ...prev,
-            audioTranscription: transcriptText,
-            transcriptSegments: segments,
-            hasAudioRecording: prev.hasAudioRecording || segments.length > 0,
+            lessonNotes: notes,
+            lessonInsights: insights,
+            hasAudioRecording: prev.hasAudioRecording || insights.length > 0,
           }));
         }}
-        onAnalysisComplete={(analysis, transcriptText, segments) => {
+        onAnalysisComplete={(analysis, notes, insights) => {
           setRecord((prev) => ({
             ...prev,
             hasAudioRecording: true,
-            audioTranscription: transcriptText || prev.audioTranscription,
-            transcriptSegments: segments?.length ? segments : prev.transcriptSegments,
+            lessonNotes: notes || prev.lessonNotes,
+            lessonInsights: insights?.length ? insights : prev.lessonInsights,
             aiAnalysis: analysis,
           }));
           setShowAiModal(true);

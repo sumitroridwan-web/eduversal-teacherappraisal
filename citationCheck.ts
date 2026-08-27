@@ -25,7 +25,8 @@ export interface CitationEvidence {
     studentEvidence?: string;
   }>;
   observerNotes?: string;
-  transcript?: string;
+  /** The timestamped notes read out of the lesson recording. */
+  lessonNotes?: string;
   learningObjectives?: string;
   photos?: Array<{ caption?: string }>;
   classroomConditions?: Array<{
@@ -105,7 +106,7 @@ function buildHaystack(evidence: CitationEvidence): string {
   });
 
   if (evidence.observerNotes) parts.push(evidence.observerNotes);
-  if (evidence.transcript) parts.push(evidence.transcript);
+  if (evidence.lessonNotes) parts.push(evidence.lessonNotes);
   if (evidence.learningObjectives) parts.push(evidence.learningObjectives);
 
   (evidence.photos || []).forEach((photo) => {
@@ -129,7 +130,7 @@ function buildHaystack(evidence: CitationEvidence): string {
  * A citation without a quotation - "Activity 3: Guided Group Problem-Solving" -
  * is still checkable: either that activity exists or it does not. Crucially, a
  * source that was never captured contributes no label at all, so a rating cited
- * to a transcript of a lesson nobody recorded fails here.
+ * to the recording of a lesson nobody recorded fails here.
  */
 function buildLabels(evidence: CitationEvidence): string[] {
   const labels: string[] = [];
@@ -142,8 +143,11 @@ function buildLabels(evidence: CitationEvidence): string[] {
   if (evidence.observerNotes?.trim()) {
     labels.push('observer note', 'observer notes', 'appraiser note', 'appraiser notes', 'lesson notes');
   }
-  if (evidence.transcript?.trim()) {
-    labels.push('transcript', 'audio', 'dialogue');
+  if (evidence.lessonNotes?.trim()) {
+    // "transcript" stays among these: observations recorded before the audio
+    // pass moved to insights hold a verbatim one under the same field, and a
+    // grader citing it is citing something that really was submitted.
+    labels.push('lesson note', 'lesson notes', 'audio', 'recording', 'transcript');
   }
   if (evidence.learningObjectives?.trim()) {
     labels.push('learning objective', 'learning objectives', 'success criteria');

@@ -136,17 +136,53 @@ export interface LessonActivity {
   studentEvidenceNotes: string; // Observable Student Responses & Misconceptions
 }
 
-/** One timestamped chunk of the lesson transcript. */
-export interface TranscriptSegment {
+/**
+ * What one moment of the recording tells an appraiser.
+ *
+ * The audio pass no longer writes down what was said word for word. A
+ * verbatim transcript of forty minutes is thousands of lines nobody reads,
+ * and the appraiser has to do the observing again to get anything out of it.
+ * What goes on the record instead is the observation itself, written as the
+ * appraiser would write it: at this minute, this is what the class was doing
+ * and this is what the room was like.
+ */
+export type LessonInsightFocus =
+  /** What was being taught and how the class was working on it. */
+  | 'Lesson Activity'
+  /** The conditions around the learning - noise, order, pace, tone. */
+  | 'Classroom Environment';
+
+/** What in the audio a note was drawn from. */
+export type LessonInsightSource = 'Teacher speech' | 'Student speech' | 'Classroom sound';
+
+/** One timestamped observation drawn from the lesson recording. */
+export interface LessonInsight {
   startSeconds: number;
   timeLabel: string; // mm:ss from the start of the recording
-  text: string;
+  focus: LessonInsightFocus;
+  /** The observation itself, in whole sentences, in the appraiser's voice. */
+  note: string;
+  /** Teacher speech, student speech, classroom sound, or several of them. */
+  heardFrom: LessonInsightSource[];
   /**
-   * Who was speaking - Teacher, Student, Students or Unclear - when the
-   * transcript came from the server, which can tell voices apart. Absent on
-   * lines captured by the browser's own engine, and on lines the appraiser
-   * typed, neither of which can.
+   * The few words the note actually rests on, where a particular utterance is
+   * what was heard. Kept short and verbatim on purpose: an appraisal that
+   * affects progression has to be able to show what was said, and a note
+   * summarising a moment cannot do that on its own.
    */
+  quote?: string;
+}
+
+/**
+ * One timestamped chunk of a verbatim lesson transcript.
+ *
+ * @deprecated The audio pass writes {@link LessonInsight} now. This stays so
+ * observations recorded before that change still open with what they captured.
+ */
+export interface TranscriptSegment {
+  startSeconds: number;
+  timeLabel: string;
+  text: string;
   speaker?: string;
 }
 
@@ -329,7 +365,12 @@ export interface TeacherAppraisalRecord {
   audioClipId?: string;
   audioMimeType?: string;
   audioDurationSeconds?: number;
+  /** The lesson notes read out of the recording, as one timestamped text. */
+  lessonNotes?: string;
+  lessonInsights?: LessonInsight[];
+  /** @deprecated Verbatim transcript held by observations recorded before the insight pass. */
   audioTranscription?: string;
+  /** @deprecated See {@link audioTranscription}. */
   transcriptSegments?: TranscriptSegment[];
   aiAnalysis?: AiLessonAnalysis;
 

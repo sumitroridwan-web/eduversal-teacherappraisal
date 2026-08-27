@@ -345,7 +345,7 @@ app.get("/api/health", (req, res) => {
 });
 
 /**
- * How large one transcription window may be.
+ * How large one window of a recording may be.
  *
  * Posted as raw bytes rather than base64 inside JSON, so the body is the
  * audio itself. Kept in step with MAX_WINDOW_BYTES in the audioWindows
@@ -361,23 +361,39 @@ function formatStamp(totalSeconds: number): string {
   return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 }
 
+/** The two things a note may be about. Anything else is read as the activity. */
+const INSIGHT_FOCUSES = ["Lesson Activity", "Classroom Environment"] as const;
+
+/** What a note may be drawn from. Anything else is dropped rather than kept. */
+const INSIGHT_SOURCES = ["Teacher speech", "Student speech", "Classroom sound"] as const;
+
+/** Matches a value to one of a fixed set, however the model cased or spaced it. */
+function matchOption<T extends string>(value: unknown, options: readonly T[]): T | null {
+  const flat = String(value ?? "").toLowerCase().replace(/[^a-z]+/g, "");
+  return options.find((option) => option.toLowerCase().replace(/[^a-z]+/g, "") === flat) || null;
+}
+
 /**
- * API: transcribe one window of a lesson recording.
+ * API: read one window of a lesson recording for what it shows.
  *
- * The browser's own speech engine is a dictation tool - one speaker, close to
- * the microphone, no idea who is talking - and a classroom is none of those
- * things. Transcription happens here instead, against a model that was given
- * the whole window of audio and can say whether it was the teacher or a child
- * speaking. The recorder still runs the browser engine while the lesson is
- * live, but only as something for the appraiser to watch; this is the
- * transcript that ends up on the record.
+ * This does not write down what was said. An appraiser handed forty minutes
+ * of verbatim classroom dialogue has to observe the lesson a second time to
+ * get anything out of it, and the words a distant microphone catches are the
+ * least reliable part of the recording anyway. What comes back instead is the
+ * observation - at this minute the class was doing this, and the room was
+ * like this - written as sentences that go straight into the lesson notes.
+ *
+ * The model is given the whole window of audio, so it hears what no transcript
+ * carries: who was talking, how many, over what. The teacher's words, the
+ * children's words and the noise of the room are all evidence, and a note may
+ * rest on any of them.
  *
  * One window at a time, because a lesson does not fit in a single request.
  * The caller passes the offset the window starts at and stitches the replies
  * back into one timeline.
  */
 app.post(
-  "/api/transcribe-window",
+  "/api/lesson-insights-window",
   requireAuth,
   express.raw({ type: () => true, limit: "12mb" }),
   async (req, res) => {
@@ -408,38 +424,63 @@ app.post(
       const spokenLanguage =
         language === "id"
           ? "The lesson is taught in Bahasa Indonesia, often mixed with English subject " +
-            "vocabulary. Transcribe each utterance in the language it was actually spoken " +
-            "in, and do not translate."
+            "vocabulary. Write the notes in English, but keep any quoted words in the " +
+            "language they were actually spoken in and do not translate them."
           : "The lesson is taught in English, and may be mixed with the local language. " +
-            "Transcribe each utterance in the language it was actually spoken in, and do " +
-            "not translate.";
+            "Write the notes in English, but keep any quoted words in the language they " +
+            "were actually spoken in and do not translate them.";
 
       const promptText = `
-You are transcribing one window of a classroom lesson observation, recorded on a
+You are observing one window of a classroom lesson from its audio, recorded on a
 device placed in the room rather than on a microphone worn by the teacher. Expect
 a distant and reverberant teacher, overlapping children, scraping chairs and
-general classroom noise. This is normal and is not a reason to return nothing.
+general classroom noise. That is normal, and the noise is itself evidence.
 
 ${spokenLanguage}
 
-Return the spoken content of this window as an ordered list of utterances. For each:
-- startSeconds: when it begins, in seconds from the start of THIS window of audio,
-  not from the start of the lesson. A number, and never past the length of the audio.
-- speaker: one of "Teacher", "Student", "Students", or "Unclear". Use "Students" for
-  choral or whole-class responses, and "Unclear" only when the audio genuinely does
-  not tell you.
-- text: what was said, verbatim. Keep hesitations and false starts - an appraiser is
-  reading this for how the teacher questions and explains, and a tidied paraphrase
-  destroys exactly that evidence.
+Do NOT transcribe. Write what an experienced appraiser sitting in the room would
+have written in their notebook: an ordered list of timestamped observations that
+will be read back as the lesson notes for this observation.
+
+For each observation return:
+- startSeconds: when the moment begins, in seconds from the start of THIS window
+  of audio, not from the start of the lesson. A number, never past the length of
+  the audio.
+- focus: "Lesson Activity" when the note is about what was being taught and how
+  the class was working on it - the phase of the lesson, the task set, the
+  questions asked, the instructions given, how students responded, what they
+  understood or got wrong. "Classroom Environment" when it is about the
+  conditions around the learning - the noise level and what was making it,
+  transitions between tasks, how orderly or settled the room was, off-task
+  drift, how the teacher handled behaviour, pace, and the tone between teacher
+  and class.
+- note: the observation itself, in one to three complete sentences, written in
+  the third person and in an appraiser's professional voice - "The teacher
+  opened with a recall question about yesterday's experiment, and several
+  students answered together without being nominated." Say what happened and
+  what was observable about it. Do not rate the teacher, do not award a score,
+  and do not offer advice.
+- heardFrom: every one of "Teacher speech", "Student speech" and "Classroom
+  sound" that this note actually rests on. A note about noise, chairs, movement
+  or silence rests on "Classroom sound".
+- quote: where the note turns on a particular thing that was said, the few words
+  themselves, verbatim and under about fifteen words. Leave it out when the note
+  rests on the sound of the room rather than on any one utterance.
+
+Cover the window evenly. Aim for a note roughly every thirty to ninety seconds of
+audio, more where the lesson changes and fewer where it does not, and include at
+least one "Classroom Environment" note wherever the room gives you anything to say
+about it.
 
 Rules:
-- Transcribe only what is actually audible. Never guess at words to fill a gap, and
-  never invent classroom dialogue that would fit the lesson.
-- Where speech is present but unintelligible, emit the utterance with the text
-  "[inaudible]" rather than dropping or inventing it.
-- If the window carries no intelligible speech at all - silence, or only room noise -
-  return an empty list. That is a valid answer.
-- Do not summarise, comment on, or evaluate the lesson. Transcript only.
+- Report only what this audio actually evidences. Never invent an activity, a
+  question, a student response or an incident because it would fit the lesson,
+  and never quote words that were not spoken.
+- Where you can hear that something is happening but not what - movement,
+  overlapping talk, a stretch you cannot make out - say exactly that, e.g.
+  "Sustained overlapping talk across the room, too indistinct to attribute."
+- If the window carries nothing at all - silence, or only room tone - return an
+  empty list. That is a valid answer.
 `;
 
       const response = await ai.models.generateContent({
@@ -455,9 +496,9 @@ Rules:
           responseSchema: {
             type: Type.OBJECT,
             properties: {
-              segments: {
+              insights: {
                 type: Type.ARRAY,
-                description: "Utterances heard in this window, in the order they were spoken",
+                description: "Observations drawn from this window, in the order they occurred",
                 items: {
                   type: Type.OBJECT,
                   properties: {
@@ -465,17 +506,29 @@ Rules:
                       type: Type.NUMBER,
                       description: "Seconds from the start of this window of audio",
                     },
-                    speaker: {
+                    focus: {
                       type: Type.STRING,
-                      description: 'Teacher | Student | Students | Unclear',
+                      description: "Lesson Activity | Classroom Environment",
                     },
-                    text: { type: Type.STRING, description: "Verbatim speech" },
+                    note: {
+                      type: Type.STRING,
+                      description: "The observation in complete sentences, in an appraiser's voice",
+                    },
+                    heardFrom: {
+                      type: Type.ARRAY,
+                      items: { type: Type.STRING },
+                      description: "Teacher speech | Student speech | Classroom sound",
+                    },
+                    quote: {
+                      type: Type.STRING,
+                      description: "The few verbatim words the note rests on, where there are any",
+                    },
                   },
-                  required: ["startSeconds", "speaker", "text"],
+                  required: ["startSeconds", "focus", "note", "heardFrom"],
                 },
               },
             },
-            required: ["segments"],
+            required: ["insights"],
           },
         },
       });
@@ -486,36 +539,48 @@ Rules:
       }
 
       const parsed = JSON.parse(text);
-      const raw = Array.isArray(parsed?.segments) ? parsed.segments : [];
+      const raw = Array.isArray(parsed?.insights) ? parsed.insights : [];
 
       // Stamped against the lesson rather than the window, and sorted, because
       // a model asked for times in order still occasionally returns them out of
-      // it and a transcript that jumps backwards cannot be cited.
-      const segments = raw
-        .filter((seg: any) => typeof seg?.text === "string" && seg.text.trim())
-        .map((seg: any) => {
-          const within = Math.max(0, Number(seg.startSeconds) || 0);
+      // it and notes that jump backwards cannot be cited.
+      const insights = raw
+        .filter((item: any) => typeof item?.note === "string" && item.note.trim())
+        .map((item: any) => {
+          const within = Math.max(0, Number(item.startSeconds) || 0);
           const startSeconds = Math.round(offsetSeconds + within);
+          const heardFrom = (Array.isArray(item.heardFrom) ? item.heardFrom : [])
+            .map((source: unknown) => matchOption(source, INSIGHT_SOURCES))
+            .filter((source: string | null): source is string => !!source);
+          const quote = typeof item.quote === "string" ? item.quote.trim() : "";
+
           return {
             startSeconds,
             timeLabel: formatStamp(startSeconds),
-            speaker: typeof seg.speaker === "string" ? seg.speaker : "Unclear",
-            text: String(seg.text).trim(),
+            // An unrecognised focus is read as the lesson rather than dropped:
+            // the note is still an observation, and losing it would be worse
+            // than filing it under the wrong one of two headings.
+            focus: matchOption(item.focus, INSIGHT_FOCUSES) || "Lesson Activity",
+            note: String(item.note).trim(),
+            // A note has to say what it rests on. With nothing recognised, the
+            // honest answer is that it came from the sound of the room.
+            heardFrom: heardFrom.length ? Array.from(new Set(heardFrom)) : ["Classroom sound"],
+            ...(quote ? { quote } : {}),
           };
         })
         .sort((a: any, b: any) => a.startSeconds - b.startSeconds);
 
-      return res.json({ success: true, segments });
+      return res.json({ success: true, insights });
     } catch (error: any) {
-      console.error("Transcription Error:", error);
+      console.error("Lesson insight error:", error);
       return res.status(500).json({
-        error: error.message || "Failed to transcribe this part of the lesson.",
+        error: error.message || "Failed to read this part of the lesson.",
       });
     }
   }
 );
 
-// API: Analyze Lesson Audio or Transcript
+// API: Analyze Lesson Audio or Lesson Notes
 app.post("/api/analyze-lesson", requireAuth, async (req, res) => {
   try {
     const ai = await getGeminiClient();
@@ -529,7 +594,7 @@ app.post("/api/analyze-lesson", requireAuth, async (req, res) => {
     const {
       audioBase64,
       mimeType = "audio/webm",
-      transcript,
+      lessonNotes,
       teacherName,
       subject,
       gradeLevel,
@@ -543,9 +608,9 @@ app.post("/api/analyze-lesson", requireAuth, async (req, res) => {
     if (typeof audioBase64 === "string" && audioBase64.length > MAX_AUDIO_BASE64_LENGTH) {
       return res.status(413).json({
         error:
-          "The audio is too large to analyse in one request. Transcribe the " +
-          "recording first - that reads it window by window, whatever its " +
-          "length - and analyse the lesson from that transcript.",
+          "The audio is too large to analyse in one request. Read the " +
+          "recording for lesson insights first - that reads it window by " +
+          "window, whatever its length - and analyse the lesson from those notes.",
       });
     }
 
@@ -564,7 +629,7 @@ app.post("/api/analyze-lesson", requireAuth, async (req, res) => {
     const promptText = `
 You are an expert master educational consultant and senior appraiser for the Eduversal Teacher Appraisal Framework (Framework 2 - Classroom Observation).
 
-Analyze the provided lesson recording / transcript / observation details for:
+Analyze the provided lesson recording / lesson notes / observation details for:
 - Teacher: ${teacherName || "Observed Teacher"}
 - Subject: ${subject || "General Subject"}
 - Grade / Level: ${gradeLevel || "Standard"}
@@ -572,7 +637,7 @@ Analyze the provided lesson recording / transcript / observation details for:
 - Lesson Topic: ${lessonTopic || "Topic not specified"}
 - Learning Objectives: ${learningObjectives || "Standard curriculum objectives"}
 - Observer Live Notes: ${additionalNotes || "None"}
-${transcript ? `- Full Lesson Audio Transcription / Dialogue Notes:\n"${transcript}"` : ""}
+${lessonNotes ? `- Timestamped Lesson Notes Read From The Recording:\n"${lessonNotes}"` : ""}
 
 Evaluate the classroom instruction thoroughly based on Framework 2:
 1. Domain 1: Lesson Planning & Objective Alignment
@@ -595,8 +660,8 @@ Provide a comprehensive, highly constructive pedagogical breakdown in JSON forma
   behaviour, pacing, group dynamics, tone and rapport.
 
 Rules for classroomConditions:
-- Anchor every entry to a time from the transcript (mm:ss). The transcript
-  provided is already timestamped in [mm:ss] form - reuse those stamps.
+- Anchor every entry to a time from the lesson notes (mm:ss). The notes
+  provided are already timestamped in [mm:ss] form - reuse those stamps.
 - Name the classroom-management theory the observation illustrates, choosing
   the one that genuinely fits, e.g. Kounin (withitness, overlapping, momentum,
   group alerting, ripple effect), Marzano (rules and procedures, teacher-student
@@ -632,7 +697,7 @@ Rules for classroomConditions:
               items: {
                 type: Type.OBJECT,
                 properties: {
-                  timeLabel: { type: Type.STRING, description: "mm:ss taken from the timestamped transcript" },
+                  timeLabel: { type: Type.STRING, description: "mm:ss taken from the timestamped lesson notes" },
                   condition: { type: Type.STRING, description: "What was actually heard" },
                   theory: { type: Type.STRING, description: "e.g. 'Kounin - Withitness', 'Rosenshine - Guided Practice'" },
                   interpretation: { type: Type.STRING, description: "What it shows when read through that theory" },
@@ -765,7 +830,7 @@ Provide high-impact, empathetic, research-informed feedback aligned with Daniels
   }
 });
 
-// API: Auto-Grade Teacher Lesson Observation based on Lesson Activities, Notes & Transcripts
+// API: Auto-Grade Teacher Lesson Observation based on Lesson Activities, Notes & Audio Insights
 app.post("/api/auto-grade", requireAuth, async (req, res) => {
   try {
     const ai = await getGeminiClient();
@@ -783,7 +848,7 @@ app.post("/api/auto-grade", requireAuth, async (req, res) => {
       lessonTopic,
       learningObjectives,
       observerNotes,
-      transcript,
+      lessonNotes,
       activities = [],
       indicators = [],
       photos = [],
@@ -804,7 +869,7 @@ Observation Context:
 - Lesson Topic: ${lessonTopic}
 - Stated Learning Objectives: ${learningObjectives}
 - General Observer Notes: ${observerNotes || "None"}
-- Audio Transcript / Dialogue: ${transcript ? `"${transcript}"` : "Not available"}
+- Lesson Notes Read From The Recording: ${lessonNotes ? `"${lessonNotes}"` : "Not available"}
 
 Structured Lesson Activities Timeline (${activities.length} phases recorded):
 ${JSON.stringify(activities, null, 2)}
@@ -837,8 +902,9 @@ EVIDENCE RULES - these matter more than producing a full set of scores:
 
 1. Score an indicator ONLY where the captured evidence actually speaks to it.
    The evidence available to you is: the lesson activities timeline, the
-   observer's notes, the timestamped transcript, the photo captions, and the
-   classroom-condition entries. Nothing else exists.
+   observer's notes, the timestamped lesson notes read from the recording,
+   the photo captions, and the classroom-condition entries. Nothing else
+   exists.
 
 2. Where there is no evidence for an indicator, set "notObservable": true,
    set "score" to null, and write the rationale as "Not observable - " plus a
@@ -849,13 +915,14 @@ EVIDENCE RULES - these matter more than producing a full set of scores:
    the teacher than an invented score.
 
 3. Every rationale for a scored indicator MUST cite where the evidence came
-   from, quoting or naming it: a transcript moment with its [mm:ss] stamp, an
+   from, quoting or naming it: a lesson note with its [mm:ss] stamp, an
    activity by name and time range, a photo by its caption, or a line from the
    observer's notes. Put those citations in "evidenceRefs" as well, one per
    source, each written so an appraiser can find it again - for example
-   "Transcript [12:40]: 'so why did the volume change?'", "Activity 3: Guided
-   Group Problem-Solving (08:20-08:35)", "Photo: 'Success criteria displayed
-   on the board'", or "Observer note: students re-grouped after the demo".
+   "Lesson note [12:40]: 'asked why the volume changed and took three answers'",
+   "Activity 3: Guided Group Problem-Solving (08:20-08:35)", "Photo: 'Success
+   criteria displayed on the board'", or "Observer note: students re-grouped
+   after the demo".
 
 4. A rationale with no citable evidence behind it is not acceptable. If you
    cannot cite it, the indicator is not observable.
@@ -906,7 +973,7 @@ could not be observed and what further evidence would close that gap.
                   evidenceRefs: {
                     type: Type.ARRAY,
                     items: { type: Type.STRING },
-                    description: "Each source cited, e.g. \"Transcript [12:40]: '...'\" or \"Photo: 'caption'\"",
+                    description: "Each source cited, e.g. \"Lesson note [12:40]: '...'\" or \"Photo: 'caption'\"",
                   },
                 },
                 required: ["indicatorCode", "rationale"],
@@ -941,7 +1008,7 @@ could not be observed and what further evidence would close that gap.
     const verification = verifyCitations(parsed.scores, {
       activities,
       observerNotes,
-      transcript,
+      lessonNotes,
       photos,
       classroomConditions,
       learningObjectives,

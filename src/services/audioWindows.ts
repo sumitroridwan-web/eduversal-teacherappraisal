@@ -1,5 +1,5 @@
 /**
- * Cutting a lesson recording into windows a transcription request can carry.
+ * Cutting a lesson recording into windows one request can carry.
  *
  * The recorder keeps one clip per observation, and that clip is routinely far
  * larger than the 4.5MB a request may weigh. A recording cannot simply be
@@ -7,7 +7,7 @@
  * front, so every piece after the first is undecodable on its own. The clip is
  * therefore decoded and re-encoded here, one self-contained window at a time.
  *
- * Windows are 16 kHz mono 16-bit WAV. That is what speech recognition wants -
+ * Windows are 16 kHz mono 16-bit WAV. That is what a speech model wants -
  * uncompressed, at the rate the acoustic models are trained on - and it is
  * reached by decoding rather than by re-recording, so it works the same on a
  * clip captured a moment ago and on one restored from the device after a
@@ -15,7 +15,7 @@
  */
 
 /** The rate speech models are trained at; more is spent bytes, less loses consonants. */
-export const TRANSCRIBE_SAMPLE_RATE = 16_000;
+export const SPEECH_SAMPLE_RATE = 16_000;
 
 const BYTES_PER_SAMPLE = 2; // 16-bit PCM
 const WAV_HEADER_BYTES = 44;
@@ -54,7 +54,7 @@ export interface WindowPlan {
  * refused at the edge can be checked without a browser.
  */
 export function maxSamplesPerWindow(
-  sampleRate: number = TRANSCRIBE_SAMPLE_RATE,
+  sampleRate: number = SPEECH_SAMPLE_RATE,
   maxBytes: number = MAX_WINDOW_BYTES
 ): number {
   const usable = maxBytes - WAV_HEADER_BYTES;
@@ -66,13 +66,13 @@ export function maxSamplesPerWindow(
  * Divide a recording into equal windows no larger than the budget.
  *
  * Equal rather than greedy: a greedy split leaves a last window of a few
- * seconds, and a few seconds of classroom audio out of context transcribes
- * badly. Spreading the remainder keeps every window a comparable stretch of
+ * seconds, and a few seconds of classroom audio out of context tells an
+ * observer almost nothing. Spreading the remainder keeps every window a comparable stretch of
  * lesson.
  */
 export function planWindows(
   totalSamples: number,
-  sampleRate: number = TRANSCRIBE_SAMPLE_RATE,
+  sampleRate: number = SPEECH_SAMPLE_RATE,
   maxBytes: number = MAX_WINDOW_BYTES
 ): WindowPlan[] {
   if (totalSamples <= 0) return [];
@@ -107,7 +107,7 @@ export function planWindows(
  */
 export function encodeWav(
   samples: Float32Array,
-  sampleRate: number = TRANSCRIBE_SAMPLE_RATE
+  sampleRate: number = SPEECH_SAMPLE_RATE
 ): ArrayBuffer {
   const dataBytes = samples.length * BYTES_PER_SAMPLE;
   const buffer = new ArrayBuffer(WAV_HEADER_BYTES + dataBytes);
@@ -177,15 +177,15 @@ function downmixToMono(buffer: AudioBuffer): Float32Array {
 async function decodeToMono16k(blob: Blob): Promise<Float32Array> {
   const OfflineCtx: typeof OfflineAudioContext =
     (window as any).OfflineAudioContext || (window as any).webkitOfflineAudioContext;
-  if (!OfflineCtx) throw new Error('This browser cannot decode audio for transcription.');
+  if (!OfflineCtx) throw new Error('This browser cannot decode audio for the insight pass.');
 
   const bytes = await blob.arrayBuffer();
-  const decoded = await decodeAudioData(new OfflineCtx(1, 1, TRANSCRIBE_SAMPLE_RATE), bytes);
+  const decoded = await decodeAudioData(new OfflineCtx(1, 1, SPEECH_SAMPLE_RATE), bytes);
 
-  if (decoded.sampleRate === TRANSCRIBE_SAMPLE_RATE) return downmixToMono(decoded);
+  if (decoded.sampleRate === SPEECH_SAMPLE_RATE) return downmixToMono(decoded);
 
-  const frames = Math.ceil(decoded.duration * TRANSCRIBE_SAMPLE_RATE);
-  const resampler = new OfflineCtx(1, frames, TRANSCRIBE_SAMPLE_RATE);
+  const frames = Math.ceil(decoded.duration * SPEECH_SAMPLE_RATE);
+  const resampler = new OfflineCtx(1, frames, SPEECH_SAMPLE_RATE);
   const source = resampler.createBufferSource();
   source.buffer = decoded;
   source.connect(resampler.destination);
@@ -195,17 +195,17 @@ async function decodeToMono16k(blob: Blob): Promise<Float32Array> {
 }
 
 /**
- * Cut a recording into transcribable windows.
+ * Cut a recording into windows the insight pass can read.
  *
- * Returns them in order with the offset each one begins at, so a transcript
- * assembled from the replies carries timestamps against the lesson rather than
+ * Returns them in order with the offset each one begins at, so the notes
+ * assembled from the replies carry timestamps against the lesson rather than
  * against the window.
  */
-export async function splitForTranscription(blob: Blob): Promise<AudioWindow[]> {
+export async function splitForInsightPass(blob: Blob): Promise<AudioWindow[]> {
   const samples = await decodeToMono16k(blob);
   if (!samples.length) return [];
 
-  return planWindows(samples.length, TRANSCRIBE_SAMPLE_RATE).map((plan) => ({
+  return planWindows(samples.length, SPEECH_SAMPLE_RATE).map((plan) => ({
     index: plan.index,
     startSeconds: plan.startSeconds,
     durationSeconds: plan.durationSeconds,
