@@ -41,6 +41,7 @@ export const APPRAISERS = [
   'Kyaw Moe Aung (Muhammad Ali)',
   'Mikawati',
   'Muhammad Iqbal',
+  'Muhammad Ishaq Nurdin',
   'Nudiya Lisholati',
   "Qurrota A'yun",
   'Ridwan Sumitro',

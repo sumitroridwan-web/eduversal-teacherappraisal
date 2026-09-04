@@ -25,6 +25,15 @@ import {
   COVERAGE_FLOOR,
   LEVEL_SCORING_CONFIGS,
 } from '../data/frameworkRubrics';
+import { splitObserverNotes } from '../services/autoGrader';
+
+/**
+ * Strips a bullet or dash the appraiser typed at the head of a note line, so
+ * a hand-marked list does not come out of the report bulleted twice.
+ */
+function stripLeadingMarker(line: string): string {
+  return line.replace(/^\s*[-–—•*]+\s*/, '');
+}
 
 interface ReportViewProps {
   record: TeacherAppraisalRecord;
@@ -651,8 +660,18 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
           {/* Observer Narrative */}
           {record.generalObserverNotes && (
             <div className="mt-4 p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs">
-              <strong className="text-slate-900 block mb-1">Appraiser General Observation Narrative:</strong>
-              <p className="text-slate-700 leading-relaxed">{record.generalObserverNotes}</p>
+              <strong className="text-slate-900 block mb-1.5">Appraiser General Observation Narrative:</strong>
+              {/* One line per note the appraiser took, in the order they took
+                  them - a running record of the lesson reads as the sequence it
+                  was, not as a single paragraph. */}
+              <ul className="space-y-1 text-slate-700 leading-relaxed">
+                {splitObserverNotes(record.generalObserverNotes).map((line, i) => (
+                  <li key={i} className="flex items-start gap-1.5">
+                    <span className="text-slate-400 font-bold">•</span>
+                    <span>{stripLeadingMarker(line)}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
         </div>
