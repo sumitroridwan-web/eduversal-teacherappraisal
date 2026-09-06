@@ -776,7 +776,45 @@ Rules for classroomConditions:
   }
 });
 
-// API: Generate Custom Glow / Grow / Go & Action Recommendations
+/**
+ * API: Write one Glow / Grow / Go column from the observation record.
+ *
+ * The appraiser presses this per column, so the request names the section and
+ * gets that column back and nothing else. What it writes from is the same
+ * evidence the auto-grader reads - the observer's notes, the timestamped
+ * lesson notes, the activities, the photo captions - plus the ratings already
+ * given and the note written against each one. Three entries, written long
+ * enough to carry a debrief on their own.
+ */
+const FEEDBACK_SECTIONS = ["glow", "grow", "go"] as const;
+type FeedbackSection = (typeof FEEDBACK_SECTIONS)[number];
+
+const SECTION_BRIEF: Record<FeedbackSection, string> = {
+  glow:
+    'Write the "Glow" column: the strengths this teacher actually demonstrated.\n' +
+    "Each entry must name the practice and the indicator it sits under, quote or\n" +
+    "point to the moment it was seen (a lesson note with its [mm:ss] stamp, an\n" +
+    "activity by name, a photo caption, or a line from the observer's notes), and\n" +
+    "then say what that practice did for the students' learning. Praise the\n" +
+    "specific teaching move, never the person in general. Draw on the indicators\n" +
+    "rated Proficient or Distinguished first.",
+  grow:
+    'Write the "Grow" column: reflective coaching questions for the post-observation\n' +
+    "conference. Each entry must open with the specific moment it comes from -\n" +
+    "state the evidence briefly - and then ask one genuinely open question the\n" +
+    "teacher has to think about, phrased so it cannot be answered yes or no and\n" +
+    "does not smuggle in the answer. Take the moments from the indicators rated\n" +
+    "Basic or Unsatisfactory first; where nothing sits below Proficient, ask what\n" +
+    "would stretch the strong practice further. Be developmental, never punitive.",
+  go:
+    'Write the "Go" column: the next steps the teacher and appraiser agree to.\n' +
+    "Each entry must state one concrete change to classroom practice, the lesson\n" +
+    "or timeframe it will be tried in, and what the appraiser would look for at\n" +
+    "the next observation to know it happened. Tie each step to the weakest rated\n" +
+    "indicators and to what the evidence showed was missing. No step may be\n" +
+    "generic professional-development advice that any teacher could be handed.",
+};
+
 app.post("/api/ai-feedback", requireAuth, async (req, res) => {
   try {
     const ai = await getGeminiClient();
@@ -785,23 +823,90 @@ app.post("/api/ai-feedback", requireAuth, async (req, res) => {
     }
     const { Type } = await loadGenAI();
 
-    const { teacherName, subject, careerLevel, scoredItems, observerNotes, language } = req.body;
+    const {
+      section,
+      count,
+      teacherName,
+      subject,
+      careerLevel,
+      schoolLevel,
+      gradeClass,
+      lessonTopic,
+      learningObjectives,
+      observerNotes,
+      lessonNotes,
+      lessonInsights = [],
+      activities = [],
+      photos = [],
+      classroomConditions = [],
+      scoredItems = [],
+      language,
+    } = req.body;
+
+    if (!FEEDBACK_SECTIONS.includes(section)) {
+      return res.status(400).json({
+        error: `"section" must be one of ${FEEDBACK_SECTIONS.join(", ")}.`,
+      });
+    }
+
+    // Three entries is what the debrief column holds. A larger number is
+    // honoured up to the column's own ceiling of five; anything else is three.
+    const wanted = Number.isInteger(count) && count >= 1 && count <= 5 ? count : 3;
 
     const prompt = `
-You are a senior Eduversal pedagogical appraiser.
-Generate professional, structured post-observation feedback (Glow / Grow / Go protocol) for:
+You are a senior Eduversal pedagogical appraiser writing the post-observation
+debrief with the observing appraiser, under Eduversal Teacher Appraisal
+Framework 2.0 and informed by Danielson FfT and Marzano.
+
+Observation Context:
 - Teacher: ${teacherName}
 - Subject: ${subject}
-- Level: ${careerLevel}
-- Observer's Quick Notes: ${observerNotes || "None"}
-- Assessment Items and Scores:
-${JSON.stringify(scoredItems || [], null, 2)}
+- School Level: ${schoolLevel}
+- Grade/Class: ${gradeClass}
+- Career Stage: ${careerLevel}
+- Lesson Topic: ${lessonTopic}
+- Stated Learning Objectives: ${learningObjectives || "None recorded"}
 
-Provide high-impact, empathetic, research-informed feedback aligned with Danielson FfT and Marzano instructional strategies:
-1. Glow (exactly 3 specific praises with rubric evidence)
-2. Grow (exactly 3 reflective coaching questions designed to prompt deep professional reflection)
-3. Go (exactly 3 concrete, measurable commitments/next steps)
-4. Synthesis Paragraph for the official appraisal record.
+The Appraiser's Observation Notes:
+${observerNotes?.trim() ? `"${observerNotes}"` : "None recorded"}
+
+Lesson Notes Read From The Recording:
+${lessonNotes?.trim() ? `"${lessonNotes}"` : "Not available"}
+
+Timestamped Lesson Notes (${lessonInsights.length} entries):
+${JSON.stringify(lessonInsights, null, 2)}
+
+Lesson Activities Timeline (${activities.length} phases):
+${JSON.stringify(activities, null, 2)}
+
+Captioned Photo Evidence (${photos.length} photos):
+${JSON.stringify(photos, null, 2)}
+
+Classroom Conditions Heard In The Audio (${classroomConditions.length} entries):
+${JSON.stringify(classroomConditions, null, 2)}
+
+Indicators The Appraiser Has Rated (${scoredItems.length}), with the rating
+awarded, the rubric descriptor for that rating, and the appraiser's own note:
+${JSON.stringify(scoredItems, null, 2)}
+
+${SECTION_BRIEF[section as FeedbackSection]}
+
+Rules:
+1. Return exactly ${wanted} entries. Not more, not fewer. Each entry stands on
+   its own and covers a different indicator or moment from the others.
+2. Write each entry in detail: two to four full sentences, roughly 45 to 90
+   words. A one-line bullet is not enough for a debrief the teacher keeps.
+3. Ground every entry in the evidence above and show that grounding in the
+   text - the appraiser's note, a lesson note with its [mm:ss] stamp, an
+   activity name, or a photo caption. The appraiser's own notes are the
+   strongest evidence there is; use their wording where it fits.
+4. Invent nothing. Do not describe teaching that is not in the evidence, and do
+   not infer it from the subject or the career stage. Where the evidence
+   supports fewer than ${wanted} solid entries, say so plainly inside the last
+   entry rather than padding with something unevidenced.
+5. Address the teacher's practice directly and professionally. No headings, no
+   numbering, no markdown - each entry is plain prose that can be pasted
+   straight into the debrief sheet.
 `;
 
     const response = await ai.models.generateContent({
@@ -812,18 +917,24 @@ Provide high-impact, empathetic, research-informed feedback aligned with Daniels
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            glow: { type: Type.ARRAY, items: { type: Type.STRING } },
-            grow: { type: Type.ARRAY, items: { type: Type.STRING } },
-            go: { type: Type.ARRAY, items: { type: Type.STRING } },
-            synthesis: { type: Type.STRING },
+            items: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description: `Exactly ${wanted} detailed ${section} entries, each 2-4 sentences citing the evidence it rests on`,
+            },
           },
-          required: ["glow", "grow", "go", "synthesis"],
+          required: ["items"],
         },
       },
     });
 
     const parsed = JSON.parse(response.text || "{}");
-    return res.json({ success: true, data: parsed });
+    const items = (Array.isArray(parsed.items) ? parsed.items : [])
+      .map((entry: unknown) => String(entry || "").replace(/\s+/g, " ").trim())
+      .filter(Boolean)
+      .slice(0, wanted);
+
+    return res.json({ success: true, data: { section, items } });
   } catch (error: any) {
     console.error("AI Feedback Error:", error);
     return res.status(500).json({ error: error.message || "Failed to generate AI feedback." });

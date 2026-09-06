@@ -78,6 +78,7 @@ import {
   MAX_FEEDBACK_ITEMS,
   DEFAULT_FEEDBACK_ITEMS,
 } from '../services/glowGrowGo';
+import { writeFeedbackSection, FeedbackSection } from '../services/feedbackWriter';
 
 /**
  * Openings for an evidence note, chosen because each one demands a specific
@@ -146,6 +147,11 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
   const [newGlow, setNewGlow] = useState('');
   const [newGrow, setNewGrow] = useState('');
   const [newGo, setNewGo] = useState('');
+
+  // Which column the AI is currently writing, and what to tell the appraiser
+  // afterwards where the model was not the one that wrote it.
+  const [writingSection, setWritingSection] = useState<FeedbackSection | null>(null);
+  const [writeNotice, setWriteNotice] = useState<string | null>(null);
 
   /**
    * The last edit handed up to the app for an unsaved observation.
@@ -537,6 +543,69 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
 
     setRecord((prev) => ({ ...prev, feedback: generated }));
   };
+
+  const SECTION_LABEL: Record<FeedbackSection, string> = {
+    glow: 'Glow',
+    grow: 'Grow',
+    go: 'Go',
+  };
+
+  /**
+   * Writes one column from the observation notes and the ratings.
+   *
+   * It replaces the column rather than appending to it, so what comes back is
+   * three entries that were written together and read as one set - which is
+   * also why anything already written there is confirmed before it goes.
+   */
+  const handleWriteSection = async (section: FeedbackSection) => {
+    if (writingSection) return;
+
+    if (record.feedback[section].length > 0) {
+      const proceed = window.confirm(
+        `Replace the ${SECTION_LABEL[section]} entries with ${DEFAULT_FEEDBACK_ITEMS} written from ` +
+          'your observation notes and ratings?\n\nWhat is written there now will be lost.'
+      );
+      if (!proceed) return;
+    }
+
+    setWritingSection(section);
+    setWriteNotice(null);
+    try {
+      const written = await writeFeedbackSection(record, section, language);
+      setRecord((prev) => ({
+        ...prev,
+        feedback: capFeedback({ ...prev.feedback, [section]: written.items }),
+      }));
+      if (written.source !== 'ai' && written.reason) {
+        setWriteNotice(`${SECTION_LABEL[section]}: ${written.reason}`);
+      }
+    } catch (err) {
+      console.error('Writing the debrief column failed:', err);
+      setWriteNotice(
+        `${SECTION_LABEL[section]} could not be written. Check the connection and try again.`
+      );
+    } finally {
+      setWritingSection(null);
+    }
+  };
+
+  /** The per-column "write this for me" button, in that column's colour. */
+  const renderWriteButton = (section: FeedbackSection, buttonClasses: string) => (
+    <button
+      type="button"
+      onClick={() => handleWriteSection(section)}
+      disabled={writingSection !== null}
+      title={`Write ${DEFAULT_FEEDBACK_ITEMS} detailed ${SECTION_LABEL[section]} entries from the observation notes and the ratings given`}
+      className={`flex items-center gap-1 px-2 py-1 text-white text-[10px] font-bold rounded-lg transition shadow-2xs whitespace-nowrap cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${buttonClasses}`}
+    >
+      {writingSection === section ? (
+        <Loader2 className="w-3 h-3 animate-spin" />
+      ) : (
+        <Sparkles className="w-3 h-3" />
+      )}
+      {writingSection === section ? t('ggg.writing') : t('ggg.write')}
+    </button>
+  );
 
   const feedbackFull = (type: 'glow' | 'grow' | 'go') =>
     record.feedback[type].length >= MAX_FEEDBACK_ITEMS;
@@ -1783,6 +1852,20 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
             </div>
           </div>
 
+          {writeNotice && (
+            <div className="flex items-start gap-2 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span className="flex-1">{writeNotice}</span>
+              <button
+                type="button"
+                onClick={() => setWriteNotice(null)}
+                className="text-amber-700 hover:text-amber-900 font-semibold cursor-pointer"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Glow */}
             <div className="bg-emerald-50/40 p-4 rounded-xl border border-emerald-200 flex flex-col justify-between">
@@ -1792,7 +1875,10 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
                     Glow (Observed Strengths)
                   </span>
-                  <span className="text-xs text-emerald-600 font-medium">{record.feedback.glow.length} / {MAX_FEEDBACK_ITEMS}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-emerald-600 font-medium">{record.feedback.glow.length} / {MAX_FEEDBACK_ITEMS}</span>
+                    {renderWriteButton('glow', 'bg-emerald-600 hover:bg-emerald-700')}
+                  </div>
                 </div>
 
                 <div className="space-y-2 mb-4">
@@ -1844,7 +1930,10 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
                     <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
                     Grow (Reflective Questions)
                   </span>
-                  <span className="text-xs text-amber-600 font-medium">{record.feedback.grow.length} / {MAX_FEEDBACK_ITEMS}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-amber-600 font-medium">{record.feedback.grow.length} / {MAX_FEEDBACK_ITEMS}</span>
+                    {renderWriteButton('grow', 'bg-amber-500 hover:bg-amber-600')}
+                  </div>
                 </div>
 
                 <div className="space-y-2 mb-4">
@@ -1896,7 +1985,10 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
                     <span className="w-2.5 h-2.5 rounded-full bg-indigo-500" />
                     Go (Agreed Next Steps)
                   </span>
-                  <span className="text-xs text-indigo-600 font-medium">{record.feedback.go.length} / {MAX_FEEDBACK_ITEMS}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-indigo-600 font-medium">{record.feedback.go.length} / {MAX_FEEDBACK_ITEMS}</span>
+                    {renderWriteButton('go', 'bg-indigo-600 hover:bg-indigo-700')}
+                  </div>
                 </div>
 
                 <div className="space-y-2 mb-4">
