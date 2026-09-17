@@ -195,7 +195,7 @@ export const ClassroomPhotoEvidence: React.FC<ClassroomPhotoEvidenceProps> = ({
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
             Capture the room or upload photos, caption them, and flag the ones worth sharing
-            as best practice. Captioned photos appear in the observation report and are kept
+            as best practice. Every photo appears in the observation report and is kept
             on this device, not uploaded with the record.
           </p>
         </div>
@@ -323,7 +323,7 @@ export const ClassroomPhotoEvidence: React.FC<ClassroomPhotoEvidenceProps> = ({
             </span>
             {photos.some((p) => !p.caption.trim()) && (
               <span className="text-amber-700 font-medium">
-                Uncaptioned photos are left out of the report.
+                Add a caption so the report says what each photo shows.
               </span>
             )}
           </div>
