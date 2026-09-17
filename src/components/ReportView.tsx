@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   Sparkles,
   FileCheck,
+  Star,
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -49,8 +50,6 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
   const stats = calculateF2Scores(record.careerLevel, record.scores);
   const comp = calculateF2Predicate(stats.percentage);
 
-  // Only captioned photos carry meaning in a report, so uncaptioned ones are
-  // left out rather than printed as unexplained images.
   // How much of this appraisal is the appraiser's own judgement?
   const aiRatingCounts = (Object.values(record.scores) as Array<{ score: any; origin?: string }>)
     .filter((e) => typeof e?.score === 'number')
@@ -65,8 +64,9 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
       { total: 0, observer: 0, confirmed: 0, unconfirmed: 0 }
     );
 
-  const captionedPhotos = (record.photos || []).filter((p) => p.caption.trim());
-  const bestPractices = captionedPhotos.filter((p) => p.isBestPractice);
+  // Every snapshot from the lesson goes into the teacher's report, captioned
+  // or not - the image is evidence in its own right.
+  const photos = record.photos || [];
 
   // Group items by Domain
   const domainGroups: Record<string, typeof items> = {};
@@ -439,21 +439,21 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
           </div>
         )}
 
-        {/* Captioned Photo Evidence */}
-        {captionedPhotos.length > 0 && (
+        {/* Classroom Photo Evidence */}
+        {photos.length > 0 && (
           <div className="mb-8">
             <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3 pb-1 border-b border-slate-200 flex items-center justify-between">
-              <span>Classroom Photo Evidence ({captionedPhotos.length})</span>
+              <span>Classroom Photo Evidence ({photos.length})</span>
               <span className="text-[10px] text-slate-500 font-normal">Captured during observation</span>
             </h3>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {captionedPhotos.map((photo) => (
-                <figure key={photo.id} className="border border-slate-200 rounded-xl overflow-hidden bg-white break-inside-avoid">
+              {photos.map((photo, i) => (
+                <figure key={photo.id} className="relative border border-slate-200 rounded-xl overflow-hidden bg-white break-inside-avoid">
                   {photo.dataUrl ? (
                     <img
                       src={photo.dataUrl}
-                      alt={photo.caption}
+                      alt={photo.caption.trim() || `Classroom photo ${i + 1}`}
                       className="w-full h-32 object-cover"
                     />
                   ) : (
@@ -461,49 +461,21 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
                       Photo is stored on the device that captured it
                     </div>
                   )}
-                  <figcaption className="p-2 text-[11px] text-slate-700 leading-snug">
-                    {photo.caption}
-                    {photo.isBestPractice && (
-                      <span className="block mt-1 text-[10px] font-bold text-amber-700 uppercase tracking-wider">
-                        Best Practice
-                      </span>
-                    )}
-                  </figcaption>
-                </figure>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Shareable Best Practices */}
-        {bestPractices.length > 0 && (
-          <div className="mb-8">
-            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3 pb-1 border-b border-slate-200 flex items-center justify-between">
-              <span>Lesson Best Practices to Share ({bestPractices.length})</span>
-              <span className="text-[10px] text-slate-500 font-normal">For departmental dissemination</span>
-            </h3>
-
-            <div className="space-y-2 text-xs">
-              {bestPractices.map((photo, i) => (
-                <div key={photo.id} className="flex gap-3 p-2.5 rounded-xl border border-amber-200 bg-amber-50/60">
-                  {photo.dataUrl ? (
-                    <img
-                      src={photo.dataUrl}
-                      alt={photo.caption}
-                      className="w-16 h-16 object-cover rounded-lg border border-amber-200 shrink-0"
-                    />
-                  ) : (
-                    <div className="w-16 h-16 rounded-lg border border-amber-200 bg-amber-100/60 shrink-0 flex items-center justify-center text-[9px] text-amber-700 text-center leading-tight px-1">
-                      On capturing device
-                    </div>
+                  {photo.isBestPractice && (
+                    <span
+                      className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-white/90 border border-amber-300 flex items-center justify-center shadow-sm"
+                      title="Best practice"
+                      aria-label="Best practice"
+                    >
+                      <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400" />
+                    </span>
                   )}
-                  <div>
-                    <div className="text-[10px] font-bold text-amber-800 uppercase tracking-wider">
-                      Practice {i + 1}
-                    </div>
-                    <p className="text-slate-800 mt-0.5">{photo.caption}</p>
-                  </div>
-                </div>
+                  {photo.caption.trim() && (
+                    <figcaption className="p-2 text-[11px] text-slate-700 leading-snug">
+                      {photo.caption.trim()}
+                    </figcaption>
+                  )}
+                </figure>
               ))}
             </div>
           </div>
