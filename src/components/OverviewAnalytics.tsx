@@ -58,6 +58,67 @@ const GRAPH_TAB_OPTIONS: Array<{ value: GraphTab; label: string; icon: LucideIco
   { value: 'ranking', label: 'Teacher Score Spread', icon: TrendingUp },
 ];
 
+type InsightTone = 'indigo' | 'emerald' | 'teal' | 'amber' | 'rose' | 'slate';
+
+const TONE_STYLES: Record<InsightTone, { box: string; icon: string; value: string }> = {
+  indigo: { box: 'bg-indigo-50/60 border-indigo-100', icon: 'bg-indigo-100 text-indigo-700', value: 'text-indigo-700' },
+  emerald: { box: 'bg-emerald-50/60 border-emerald-100', icon: 'bg-emerald-100 text-emerald-700', value: 'text-emerald-700' },
+  teal: { box: 'bg-teal-50/60 border-teal-100', icon: 'bg-teal-100 text-teal-800', value: 'text-teal-800' },
+  amber: { box: 'bg-amber-50/60 border-amber-100', icon: 'bg-amber-100 text-amber-700', value: 'text-amber-700' },
+  rose: { box: 'bg-rose-50/60 border-rose-100', icon: 'bg-rose-100 text-rose-700', value: 'text-rose-700' },
+  slate: { box: 'bg-white border-slate-200', icon: 'bg-slate-100 text-slate-600', value: 'text-slate-900' },
+};
+
+const InsightBox: React.FC<{
+  tone: InsightTone;
+  icon: LucideIcon;
+  label: string;
+  value: React.ReactNode;
+  detail: string;
+  title?: string;
+}> = ({ tone, icon: Icon, label, value, detail, title }) => {
+  const s = TONE_STYLES[tone];
+  return (
+    <div className={`rounded-2xl border p-5 shadow-sm flex flex-col gap-2 min-w-0 ${s.box}`} title={title}>
+      <div className="flex items-center gap-2.5">
+        <span className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${s.icon}`}>
+          <Icon className="w-5 h-5" />
+        </span>
+        <span className="text-sm font-bold text-slate-700 uppercase tracking-wide">{label}</span>
+      </div>
+      <div className={`text-5xl font-extrabold font-mono leading-none tracking-tight ${s.value}`}>{value}</div>
+      <p className="text-sm text-slate-600 leading-snug">{detail}</p>
+    </div>
+  );
+};
+
+const GRADE_BOXES: Array<{ grade: 'A' | 'B' | 'C' | 'D' | 'F'; label: string; box: string; text: string }> = [
+  { grade: 'A', label: 'Excellent', box: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-700' },
+  { grade: 'B', label: 'Good', box: 'bg-indigo-50 border-indigo-200', text: 'text-indigo-700' },
+  { grade: 'C', label: 'Satisfactory', box: 'bg-amber-50 border-amber-200', text: 'text-amber-700' },
+  { grade: 'D', label: 'Needs improvement', box: 'bg-orange-50 border-orange-200', text: 'text-orange-700' },
+  { grade: 'F', label: 'Unsatisfactory', box: 'bg-rose-50 border-rose-200', text: 'text-rose-700' },
+];
+
+/** Minutes of teaching seen in one observation, from its duration or its time in/out. */
+function lessonMinutes(a: TeacherAppraisalRecord): number {
+  if (typeof a.durationMinutes === 'number' && a.durationMinutes > 0) return a.durationMinutes;
+  const toMin = (t?: string) => {
+    const m = /^(\d{1,2}):(\d{2})/.exec(t || '');
+    return m ? Number(m[1]) * 60 + Number(m[2]) : NaN;
+  };
+  const diff = toMin(a.timeOut) - toMin(a.timeIn);
+  return Number.isFinite(diff) && diff > 0 && diff < 12 * 60 ? diff : 0;
+}
+
+function formatHours(minutes: number): string {
+  if (minutes <= 0) return '0 h';
+  if (minutes < 60) return `${minutes} min`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m ? `${h}h ${m}m` : `${h} h`;
+}
+
 export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
   appraisals,
   onSelectAppraisal,
@@ -258,6 +319,91 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
     };
   }, [filteredAppraisals]);
 
+  const filtersActive =
+    selectedSchool !== 'All' || selectedSchoolLevel !== 'All' || selectedCategory !== 'All' || searchQuery !== '';
+
+  // Headline insights for the at-a-glance board. Grade-based figures use only
+  // graded observations, matching the rest of the page.
+  const insights = useMemo(() => {
+    const teachers = new Set<string>();
+    const campuses = new Set<string>();
+    const dates: number[] = [];
+    let finalized = 0;
+    let saved = 0;
+    let drafts = 0;
+    let acknowledged = 0;
+    let disagrees = 0;
+    let ackPending = 0;
+    let minutesObserved = 0;
+    let timedCount = 0;
+
+    filteredAppraisals.forEach((a) => {
+      const teacherKey = (a.teacherEmail || a.teacherName || '').trim().toLowerCase();
+      if (teacherKey) teachers.add(teacherKey);
+      if (a.schoolName) campuses.add(a.schoolName);
+
+      const t = Date.parse(a.observationDate);
+      if (!Number.isNaN(t)) dates.push(t);
+
+      if (a.status === 'Finalized (Conference Complete)') finalized++;
+      else if (a.status === 'Observation Saved') saved++;
+      else drafts++;
+
+      const ack = a.teacherAcknowledgement?.status;
+      if (ack === 'Acknowledged' || ack === 'Acknowledged with comment') acknowledged++;
+      else if (ack === 'Disagrees') disagrees++;
+      else if (a.status !== 'Draft') ackPending++;
+
+      const minutes = lessonMinutes(a);
+      if (minutes > 0) {
+        minutesObserved += minutes;
+        timedCount++;
+      }
+    });
+
+    const goodOrBetter = (gradeDistribution['A'] || 0) + (gradeDistribution['B'] || 0);
+    const needsSupport = (gradeDistribution['D'] || 0) + (gradeDistribution['F'] || 0);
+
+    const ratedDomains = hasDomainData ? domainStats : [];
+    const strongestDomain = ratedDomains.length
+      ? ratedDomains.reduce((best, d) => (d.score > best.score ? d : best))
+      : null;
+    const weakestDomain = ratedDomains.length
+      ? ratedDomains.reduce((low, d) => (d.score < low.score ? d : low))
+      : null;
+
+    const campusRanked = Object.entries(campusStats)
+      .map(([name, s]: [string, { count: number; f2Sum: number }]) => ({
+        name,
+        count: s.count,
+        f2Avg: Math.round((s.f2Sum / s.count) * 10) / 10,
+      }))
+      .sort((x, y) => y.f2Avg - x.f2Avg);
+
+    const fmt = (ms: number) =>
+      new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+
+    return {
+      teacherCount: teachers.size,
+      campusCount: campuses.size,
+      dateRange: dates.length ? { from: fmt(Math.min(...dates)), to: fmt(Math.max(...dates)) } : null,
+      goodOrBetter,
+      goodOrBetterPct: gradedCount > 0 ? Math.round((goodOrBetter / gradedCount) * 100) : 0,
+      needsSupport,
+      strongestDomain,
+      weakestDomain,
+      topCampus: campusRanked[0] ?? null,
+      finalized,
+      saved,
+      drafts,
+      acknowledged,
+      disagrees,
+      ackPending,
+      minutesObserved,
+      timedCount,
+    };
+  }, [filteredAppraisals, gradeDistribution, gradedCount, domainStats, hasDomainData, campusStats]);
+
   // Recharts Chart Formatted Datasets
   const pieGradeData = useMemo(() => {
     return [
@@ -421,54 +567,163 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
         </div>
       </div>
 
-      {/* KPI Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Appraisals */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex items-center justify-between">
+      {/* At-a-glance insight board: every number is large enough to read from
+          across a meeting room, with one plain line saying what it means. */}
+      <section aria-labelledby="insights-heading" className="space-y-4">
+        <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
-            <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">
-              Total Observations
-            </div>
-            <div className="text-2xl font-bold font-mono text-slate-900 mt-1">{totalCount}</div>
-            <div className="text-[11px] text-slate-400 mt-0.5">Across Eduversal Campuses</div>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
-            <Users className="w-6 h-6" />
+            <h2 id="insights-heading" className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-indigo-600" />
+              Observations at a Glance
+            </h2>
+            <p className="text-sm text-slate-500 mt-0.5">
+              {insights.dateRange
+                ? `Everything observed from ${insights.dateRange.from} to ${insights.dateRange.to}`
+                : 'Everything observed so far'}
+              {filtersActive ? ' — matching the filters above' : ''}
+            </p>
           </div>
         </div>
 
-        {/* Avg F2 Observation Score */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex items-center justify-between">
-          <div>
-            <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">
-              Avg F2 Observation %
-            </div>
-            <div className="text-2xl font-bold font-mono text-emerald-600 mt-1">{avgF2Pct}%</div>
-            <div className="text-[11px] text-emerald-600 mt-0.5 font-medium">
-              Across {gradedCount} graded {gradedCount === 1 ? 'observation' : 'observations'}
-            </div>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600">
-            <TrendingUp className="w-6 h-6" />
-          </div>
+        {/* Row 1: the headline results */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <InsightBox
+            tone="indigo"
+            icon={Users}
+            label="Observations done"
+            value={totalCount}
+            detail={`${insights.teacherCount} ${insights.teacherCount === 1 ? 'teacher' : 'teachers'} across ${insights.campusCount} ${insights.campusCount === 1 ? 'campus' : 'campuses'}`}
+          />
+          <InsightBox
+            tone="emerald"
+            icon={TrendingUp}
+            label="Average score"
+            value={gradedCount > 0 ? `${avgF2Pct}%` : '—'}
+            detail={
+              gradedCount > 0
+                ? `${calculateF2Predicate(avgF2Pct).predicate} on average, across ${gradedCount} graded`
+                : 'No graded observations yet'
+            }
+          />
+          <InsightBox
+            tone="teal"
+            icon={Award}
+            label="Rated Good or Excellent"
+            value={gradedCount > 0 ? `${insights.goodOrBetterPct}%` : '—'}
+            detail={`${insights.goodOrBetter} of ${gradedCount} graded scored Grade A or B`}
+          />
+          <InsightBox
+            tone="amber"
+            icon={GraduationCap}
+            label="Ready for progression"
+            value={progressionReadyCount}
+            detail={`Grade A or B at 75% or above, out of ${gradedCount} graded`}
+          />
         </div>
 
-        {/* Progression Candidates */}
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex items-center justify-between">
-          <div>
-            <div className="text-xs text-slate-500 font-semibold uppercase tracking-wider">
-              Progression Eligible
-            </div>
-            <div className="text-2xl font-bold font-mono text-amber-600 mt-1">
-              {progressionReadyCount} <span className="text-xs text-slate-400 font-normal">/ {totalCount}</span>
-            </div>
-            <div className="text-[11px] text-amber-600 mt-0.5 font-medium">Qualified for Promotion</div>
-          </div>
-          <div className="w-12 h-12 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-center text-amber-600">
-            <GraduationCap className="w-6 h-6" />
-          </div>
+        {/* Row 2: grade mix as five equal boxes */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+          {GRADE_BOXES.map((g) => {
+            const n = gradeDistribution[g.grade] || 0;
+            const pct = gradedCount > 0 ? Math.round((n / gradedCount) * 100) : 0;
+            return (
+              <div key={g.grade} className={`rounded-2xl border p-4 shadow-sm ${g.box}`}>
+                <div className="flex items-center justify-between">
+                  <span className={`text-sm font-bold uppercase tracking-wide ${g.text}`}>Grade {g.grade}</span>
+                  <span className={`text-sm font-semibold ${g.text}`}>{pct}%</span>
+                </div>
+                <div className={`text-4xl font-extrabold font-mono mt-1 ${g.text}`}>{n}</div>
+                <div className="text-sm text-slate-600 mt-0.5">{g.label}</div>
+              </div>
+            );
+          })}
         </div>
-      </div>
+
+        {/* Row 3: where the network is strong, and where it needs support */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <InsightBox
+            tone="emerald"
+            icon={CheckCircle2}
+            label="Strongest domain"
+            value={insights.strongestDomain ? `${insights.strongestDomain.score}%` : '—'}
+            title={insights.strongestDomain?.domain}
+            detail={insights.strongestDomain ? insights.strongestDomain.domain : 'No indicators rated yet'}
+          />
+          <InsightBox
+            tone={insights.weakestDomain && insights.weakestDomain.score < 75 ? 'rose' : 'slate'}
+            icon={Compass}
+            label="Domain to develop"
+            value={insights.weakestDomain ? `${insights.weakestDomain.score}%` : '—'}
+            detail={
+              insights.weakestDomain
+                ? `${insights.weakestDomain.domain}${insights.weakestDomain.score < 75 ? ' — below the 75% target' : ''}`
+                : 'No indicators rated yet'
+            }
+          />
+          <InsightBox
+            tone="indigo"
+            icon={Building2}
+            label="Top campus"
+            value={insights.topCampus ? `${insights.topCampus.f2Avg}%` : '—'}
+            detail={
+              insights.topCampus
+                ? `${insights.topCampus.name} (${insights.topCampus.count} graded)`
+                : 'No graded observations yet'
+            }
+          />
+          <InsightBox
+            tone={insights.needsSupport > 0 ? 'rose' : 'slate'}
+            icon={AlertTriangle}
+            label="Need support"
+            value={insights.needsSupport}
+            detail={
+              insights.needsSupport > 0
+                ? `Graded D or F — ${insights.needsSupport === 1 ? 'a follow-up visit is' : 'follow-up visits are'} due`
+                : 'No observation graded D or F'
+            }
+          />
+        </div>
+
+        {/* Row 4: how far the observation cycle has got */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+          <InsightBox
+            tone="teal"
+            icon={FileText}
+            label="Conferences complete"
+            value={insights.finalized}
+            detail={`${insights.saved} saved, awaiting conference · ${insights.drafts} in draft`}
+          />
+          <InsightBox
+            tone="indigo"
+            icon={CheckCircle2}
+            label="Teachers acknowledged"
+            value={insights.acknowledged}
+            detail={
+              insights.disagrees > 0
+                ? `${insights.disagrees} ${insights.disagrees === 1 ? 'teacher disagrees' : 'teachers disagree'} · ${insights.ackPending} pending`
+                : `${insights.ackPending} still pending a response`
+            }
+          />
+          <InsightBox
+            tone="slate"
+            icon={BarChart3}
+            label="Teaching time observed"
+            value={formatHours(insights.minutesObserved)}
+            detail={
+              insights.timedCount > 0
+                ? `Average ${Math.round(insights.minutesObserved / insights.timedCount)} min per lesson`
+                : 'No lesson times recorded yet'
+            }
+          />
+          <InsightBox
+            tone={provisionalCount > 0 ? 'amber' : 'slate'}
+            icon={Layers}
+            label="Provisional"
+            value={provisionalCount}
+            detail={`Under ${Math.round(COVERAGE_FLOOR * 100)}% of the framework rated, so not graded`}
+          />
+        </div>
+      </section>
 
       {/* What these numbers leave out. An exclusion nobody can see would be
           worse than the distortion it removes. */}
@@ -750,7 +1005,11 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
 
               <div className="pt-3 border-t border-slate-200 text-xs text-slate-500 flex items-center justify-between">
                 <span>Domain target threshold: <strong>75%</strong></span>
-                <span className="text-indigo-600 font-semibold">Highest: Instruction ({domainStats[2]?.score ?? 0}%)</span>
+                {insights.strongestDomain && (
+                  <span className="text-indigo-600 font-semibold">
+                    Highest: {insights.strongestDomain.shortName} ({insights.strongestDomain.score}%)
+                  </span>
+                )}
               </div>
             </div>
 
@@ -795,9 +1054,17 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
 
               <div className="mt-4 pt-3 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
                 <span>Evaluated across {totalCount} teacher observations</span>
-                <span className="text-emerald-600 font-semibold flex items-center gap-1">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> All Domains Pass Standards
-                </span>
+                {hasDomainData && (
+                  insights.weakestDomain && insights.weakestDomain.score < 75 ? (
+                    <span className="text-rose-600 font-semibold flex items-center gap-1">
+                      <AlertTriangle className="w-3.5 h-3.5" /> {insights.weakestDomain.shortName} below 75% target
+                    </span>
+                  ) : (
+                    <span className="text-emerald-600 font-semibold flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" /> All domains at or above target
+                    </span>
+                  )
+                )}
               </div>
             </div>
           </div>
