@@ -56,6 +56,116 @@ export interface SchoolReportData {
   priorityImprovements: string[];
   bestPractices: Array<{ caption: string; teacherName: string; dataUrl?: string }>;
   totalNotObservable: number;
+  /** Headline figures shown as boxes in the preview, the PDF and the Word file. */
+  statBoxes: ReportStat[];
+}
+
+export type ReportStatTone = 'teal' | 'emerald' | 'indigo' | 'amber' | 'rose' | 'slate';
+
+export interface ReportStat {
+  label: string;
+  value: string;
+  insight: string;
+  tone: ReportStatTone;
+}
+
+/** The domain target used across the platform. */
+const DOMAIN_TARGET = 75;
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * Turns the cohort figures into eight headline boxes. Every grade-based figure
+ * uses graded observations only, matching the average and the grade profile.
+ */
+function buildStatBoxes(args: {
+  observations: ObservationSummary[];
+  gradeDistribution: Record<string, number>;
+  gradedCount: number;
+  provisionalCount: number;
+  averagePercentage: number;
+  domainAverages: Array<{ domain: string; score: number; rated: number }>;
+  topPriority: { title: string; count: number } | null;
+}): ReportStat[] {
+  const { observations, gradeDistribution, gradedCount, provisionalCount, averagePercentage, domainAverages, topPriority } = args;
+  const teachers = new Set(observations.map((o) => o.teacherName.trim().toLowerCase())).size;
+  const graded = observations.filter((o) => !o.provisional);
+  const goodOrBetter = (gradeDistribution.A || 0) + (gradeDistribution.B || 0);
+  const needsSupport = (gradeDistribution.D || 0) + (gradeDistribution.F || 0);
+  const pctOfGraded = (n: number) => (gradedCount ? Math.round((n / gradedCount) * 100) : 0);
+
+  const rated = domainAverages.filter((d) => d.rated > 0);
+  const strongest = rated.length ? rated.reduce((a, b) => (b.score > a.score ? b : a)) : null;
+  const weakest = rated.length ? rated.reduce((a, b) => (b.score < a.score ? b : a)) : null;
+
+  const scores = graded.map((o) => o.percentage);
+  const high = scores.length ? Math.max(...scores) : 0;
+  const low = scores.length ? Math.min(...scores) : 0;
+
+  return [
+    {
+      label: 'Observations',
+      value: String(observations.length),
+      insight: `${plural(teachers, 'teacher')} observed; ${gradedCount} graded${
+        provisionalCount ? `, ${provisionalCount} provisional` : ''
+      }`,
+      tone: 'teal',
+    },
+    {
+      label: 'Average score',
+      value: gradedCount ? `${averagePercentage}%` : '—',
+      insight: gradedCount
+        ? `${calculateF2Predicate(averagePercentage).predicate} overall (Grade ${calculateF2Predicate(averagePercentage).gradeLetter} band)`
+        : 'No graded observations in scope',
+      tone: 'emerald',
+    },
+    {
+      label: 'Good or Excellent',
+      value: gradedCount ? `${pctOfGraded(goodOrBetter)}%` : '—',
+      insight: `${goodOrBetter} of ${gradedCount} graded at Grade A or B`,
+      tone: 'indigo',
+    },
+    {
+      label: 'Need support',
+      value: String(needsSupport),
+      insight: needsSupport
+        ? `${pctOfGraded(needsSupport)}% of graded at Grade D or F; follow-up due`
+        : 'No observation graded D or F',
+      tone: needsSupport ? 'rose' : 'slate',
+    },
+    {
+      label: 'Score range',
+      value: scores.length ? (high === low ? `${high}%` : `${low}–${high}%`) : '—',
+      insight: scores.length > 1
+        ? `${Math.round((high - low) * 10) / 10} points between lowest and highest lesson`
+        : scores.length
+        ? 'Only one graded lesson in scope'
+        : 'No graded observations in scope',
+      tone: 'slate',
+    },
+    {
+      label: 'Strongest domain',
+      value: strongest ? `${strongest.score}%` : '—',
+      insight: strongest ? strongest.domain : 'No indicators rated yet',
+      tone: 'emerald',
+    },
+    {
+      label: 'Domain to develop',
+      value: weakest ? `${weakest.score}%` : '—',
+      insight: weakest
+        ? `${weakest.domain}${weakest.score < DOMAIN_TARGET ? `, below the ${DOMAIN_TARGET}% target` : ''}`
+        : 'No indicators rated yet',
+      tone: weakest && weakest.score < DOMAIN_TARGET ? 'rose' : 'amber',
+    },
+    {
+      label: 'Top focus area',
+      value: topPriority ? `${topPriority.count} of ${observations.length}` : '—',
+      insight: topPriority
+        ? `${topPriority.title}: rated Basic or below most often`
+        : 'No indicator rated Basic or below',
+      tone: topPriority ? 'amber' : 'slate',
+    },
+  ];
 }
 
 const DOMAIN_BUCKETS: Array<{ key: string; label: string; prefixes: string[] }> = [
@@ -213,10 +323,12 @@ export function buildSchoolReport(
     };
   });
 
+  const rankedImprovements = [...improvementTally.values()].sort((a, b) => b.count - a.count);
+  const averagePercentage = gradedCount ? Math.round((percentageSum / gradedCount) * 10) / 10 : 0;
+
   // A priority is only useful if it says what to do about it, so each one
   // pairs the finding with the rubric's own committed next step.
-  const priorityImprovements = [...improvementTally.values()]
-    .sort((a, b) => b.count - a.count)
+  const priorityImprovements = rankedImprovements
     .slice(0, 6)
     .map((entry) => {
       const finding =
@@ -234,7 +346,7 @@ export function buildSchoolReport(
     filters,
     scopeLine: describeScope(filters),
     totalObservations: observations.length,
-    averagePercentage: gradedCount ? Math.round((percentageSum / gradedCount) * 10) / 10 : 0,
+    averagePercentage,
     gradedObservations: gradedCount,
     provisionalObservations: provisionalCount,
     gradeDistribution,
@@ -243,6 +355,17 @@ export function buildSchoolReport(
     priorityImprovements,
     bestPractices,
     totalNotObservable,
+    statBoxes: buildStatBoxes({
+      observations,
+      gradeDistribution,
+      gradedCount,
+      provisionalCount,
+      averagePercentage,
+      domainAverages,
+      topPriority: rankedImprovements[0]
+        ? { title: rankedImprovements[0].item.title, count: rankedImprovements[0].count }
+        : null,
+    }),
   };
 }
 
@@ -288,6 +411,20 @@ const SLATE = [71, 85, 105] as const;
 // enough to email. Anything beyond this is reported as a count, never dropped
 // silently.
 const MAX_REPORT_PHOTOS = 6;
+
+type RGB = readonly [number, number, number];
+
+/** Box colours for the stat boxes, shared by the PDF and the Word file. */
+const PDF_TONES: Record<ReportStatTone, { fill: RGB; border: RGB; text: RGB }> = {
+  teal: { fill: [240, 249, 250], border: [167, 214, 219], text: [22, 89, 99] },
+  emerald: { fill: [236, 253, 245], border: [167, 243, 208], text: [4, 120, 87] },
+  indigo: { fill: [238, 242, 255], border: [199, 210, 254], text: [67, 56, 202] },
+  amber: { fill: [255, 251, 235], border: [253, 230, 138], text: [180, 83, 9] },
+  rose: { fill: [255, 241, 242], border: [254, 205, 211], text: [190, 18, 60] },
+  slate: { fill: [248, 250, 252], border: [226, 232, 240], text: [15, 23, 42] },
+};
+
+const rgbHex = (c: RGB) => `#${c.map((v) => v.toString(16).padStart(2, '0')).join('')}`;
 
 function formatDate(iso: string): string {
   const d = new Date(iso);
@@ -385,6 +522,44 @@ export function generateSchoolReportPdf(
     y
   );
   y += 9;
+
+  // --- Results at a glance: four boxes per row, large value, one-line insight ---
+  if (data.totalObservations) {
+    heading('Results at a Glance');
+    const COLS = 4;
+    const GAP = 4;
+    const BOX_W = (CONTENT_W - GAP * (COLS - 1)) / COLS;
+    const BOX_H = 32;
+
+    for (let row = 0; row * COLS < data.statBoxes.length; row++) {
+      ensureSpace(BOX_H + GAP);
+      data.statBoxes.slice(row * COLS, row * COLS + COLS).forEach((stat, col) => {
+        const x = MARGIN + col * (BOX_W + GAP);
+        const tone = PDF_TONES[stat.tone];
+        doc.setFillColor(tone.fill[0], tone.fill[1], tone.fill[2]);
+        doc.setDrawColor(tone.border[0], tone.border[1], tone.border[2]);
+        doc.setLineWidth(0.3);
+        doc.roundedRect(x, y, BOX_W, BOX_H, 2, 2, 'FD');
+
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(7);
+        doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]);
+        doc.text(stat.label.toUpperCase(), x + 3, y + 5.5);
+
+        doc.setFontSize(18);
+        doc.setTextColor(tone.text[0], tone.text[1], tone.text[2]);
+        doc.text(stat.value, x + 3, y + 14.5);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(7);
+        doc.setTextColor(SLATE[0], SLATE[1], SLATE[2]);
+        const lines: string[] = doc.splitTextToSize(stat.insight, BOX_W - 6);
+        lines.slice(0, 4).forEach((line, k) => doc.text(line, x + 3, y + 19.5 + k * 3.1));
+      });
+      y += BOX_H + GAP;
+    }
+    y += 3;
+  }
 
   // --- Executive summary ---
   heading('Executive Summary');
@@ -615,6 +790,27 @@ export function generateSchoolReportDoc(
     )
     .join('');
 
+  // Word lays out tables reliably where it ignores CSS grid, so the boxes are
+  // a four-column table with each cell coloured in place.
+  const statRows: string[] = [];
+  for (let i = 0; i < data.statBoxes.length; i += 4) {
+    const cells = data.statBoxes
+      .slice(i, i + 4)
+      .map((s) => {
+        const tone = PDF_TONES[s.tone];
+        return `<td class="stat" style="background:${rgbHex(tone.fill)};border:1px solid ${rgbHex(tone.border)}">
+          <p class="stat-label">${escapeHtml(s.label)}</p>
+          <p class="stat-value" style="color:${rgbHex(tone.text)}">${escapeHtml(s.value)}</p>
+          <p class="stat-insight">${escapeHtml(s.insight)}</p>
+        </td>`;
+      })
+      .join('');
+    statRows.push(`<tr>${cells}</tr>`);
+  }
+  const statTable = data.totalObservations
+    ? `<h2>Results at a Glance</h2><table class="stats">${statRows.join('')}</table>`
+    : '';
+
   const gradeSummary = Object.entries(data.gradeDistribution)
     .filter(([, n]) => n > 0)
     .map(([g, n]) => `${n} &times; Grade ${g}`)
@@ -645,6 +841,11 @@ export function generateSchoolReportDoc(
   table.bp { border: none; margin-bottom: 10pt; }
   table.bp td { border: none; vertical-align: top; padding: 0 8pt 0 0; }
   table.bp td.bpimg { width: 130px; }
+  table.stats { border-collapse: separate; border-spacing: 6pt; margin: 0 -6pt; }
+  table.stats td.stat { width: 25%; vertical-align: top; padding: 7pt 8pt; }
+  p.stat-label { margin: 0; font-size: 8pt; font-weight: bold; color: #475569; text-transform: uppercase; letter-spacing: 0.5pt; }
+  p.stat-value { margin: 2pt 0; font-size: 22pt; font-weight: bold; line-height: 1.1; }
+  p.stat-insight { margin: 0; font-size: 8.5pt; color: #475569; line-height: 1.3; }
 </style>
 </head>
 <body>
@@ -659,6 +860,8 @@ export function generateSchoolReportDoc(
   Generated ${formatDate(data.generatedAt)} &bull; ${data.totalObservations} observation${
     data.totalObservations === 1 ? '' : 's'
   } in scope</p>
+
+  ${statTable}
 
   <h2>Executive Summary</h2>
   ${

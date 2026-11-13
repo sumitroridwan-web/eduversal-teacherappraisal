@@ -12,6 +12,7 @@ import { useLanguage } from '../i18n/LanguageContext';
 import {
   ALL,
   SchoolReportFilters,
+  ReportStatTone,
   buildSchoolReport,
   buildReportFilename,
   generateSchoolReportDoc,
@@ -43,6 +44,15 @@ const SUBJECT_CATEGORIES = [
 ];
 
 const CAREER_LEVELS = ['Induction', 'Developing', 'Proficient', 'Lead', 'EarlyYears'];
+
+const STAT_TONES: Record<ReportStatTone, { box: string; value: string }> = {
+  teal: { box: 'bg-teal-50/60 border-teal-200', value: 'text-[#165963]' },
+  emerald: { box: 'bg-emerald-50/60 border-emerald-200', value: 'text-emerald-700' },
+  indigo: { box: 'bg-indigo-50/60 border-indigo-200', value: 'text-indigo-700' },
+  amber: { box: 'bg-amber-50/60 border-amber-200', value: 'text-amber-700' },
+  rose: { box: 'bg-rose-50/60 border-rose-200', value: 'text-rose-700' },
+  slate: { box: 'bg-slate-50 border-slate-200', value: 'text-slate-900' },
+};
 
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -279,6 +289,26 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
           </div>
         ) : (
           <>
+            {/* Results at a glance - the same boxes the PDF and Word file carry */}
+            <section className="mb-7">
+              <h2 className="text-xs font-bold text-[#165963] uppercase tracking-wider pb-1 border-b border-slate-200 mb-3">
+                {t('report.atAGlance')}
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {report.statBoxes.map((s) => (
+                  <div key={s.label} className={`rounded-xl border p-4 min-w-0 ${STAT_TONES[s.tone].box}`}>
+                    <div className="text-xs font-bold text-slate-600 uppercase tracking-wide">{s.label}</div>
+                    <div
+                      className={`text-3xl sm:text-4xl font-extrabold font-mono leading-tight mt-1 ${STAT_TONES[s.tone].value}`}
+                    >
+                      {s.value}
+                    </div>
+                    <p className="text-sm text-slate-600 leading-snug mt-1">{s.insight}</p>
+                  </div>
+                ))}
+              </div>
+            </section>
+
             {/* Executive summary */}
             <section className="mb-7">
               <h2 className="text-xs font-bold text-[#165963] uppercase tracking-wider pb-1 border-b border-slate-200 mb-3">
