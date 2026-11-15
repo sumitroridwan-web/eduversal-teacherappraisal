@@ -3,6 +3,7 @@ import { calculateF2Scores, calculateF2Predicate, getItemsForLevel } from '../da
 import { capFeedback } from './glowGrowGo';
 import { pushRecord, deleteRemote } from './sync';
 import { getMedia, blobToDataUrl, deleteMediaForAppraisal } from './mediaStore';
+import { uploadPhoto, downloadPhoto, deleteRemotePhoto, isPhotoUploaded } from './mediaSync';
 
 const STORAGE_KEY = 'eduversal_appraisals_v4_clean';
 
@@ -32,10 +33,12 @@ export function dehydrateMedia(record: TeacherAppraisalRecord): TeacherAppraisal
 }
 
 /**
- * Fills the image bytes back in from the device, for a record about to be
- * shown, reported or exported. Left as it is when the media store has no
- * copy, so a missing blob shows as a photo that cannot be rendered rather
- * than silently vanishing from the evidence.
+ * Fills the image bytes back in, for a record about to be shown, reported or
+ * exported: from this device when it holds the photo, otherwise from the
+ * server. A photo found on the device that the server does not have yet is
+ * uploaded on the way, which is how photos taken before syncing existed reach
+ * other devices. Left as it is when neither has a copy, so a missing photo
+ * shows as unavailable rather than silently vanishing from the evidence.
  */
 export async function hydrateMedia(record: TeacherAppraisalRecord): Promise<TeacherAppraisalRecord> {
   const photos = record.photos || [];
@@ -45,12 +48,17 @@ export async function hydrateMedia(record: TeacherAppraisalRecord): Promise<Teac
     photos.map(async (photo) => {
       if (photo.dataUrl || !photo.blobId) return photo;
       const stored = await getMedia(photo.blobId);
-      if (!stored) return photo;
-      try {
-        return { ...photo, dataUrl: await blobToDataUrl(stored.blob) };
-      } catch {
-        return photo;
+      if (stored) {
+        try {
+          const dataUrl = await blobToDataUrl(stored.blob);
+          if (!isPhotoUploaded(photo.blobId)) void uploadPhoto(photo.blobId, record.id, dataUrl);
+          return { ...photo, dataUrl };
+        } catch {
+          return photo;
+        }
       }
+      const fetched = await downloadPhoto(photo.blobId, record.id);
+      return fetched ? { ...photo, dataUrl: fetched } : photo;
     })
   );
 
@@ -158,6 +166,10 @@ export function saveOrUpdateAppraisal(record: TeacherAppraisalRecord): TeacherAp
 
 export function deleteAppraisal(id: string): void {
   const all = loadAppraisals();
+  // The server copies of its photos go with it.
+  all
+    .find((a) => a.id === id)
+    ?.photos?.forEach((p) => p.blobId && void deleteRemotePhoto(p.blobId));
   const filtered = all.filter((a) => a.id !== id);
   saveAppraisals(filtered);
   void deleteRemote('appraisals', id);
