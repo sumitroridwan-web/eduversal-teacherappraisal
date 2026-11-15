@@ -14,7 +14,6 @@ import {
   Compass,
   Building2,
   Sparkles,
-  ChevronDown,
   FileText,
   AlertTriangle,
 } from 'lucide-react';
@@ -42,6 +41,9 @@ import {
 import { TeacherAppraisalRecord, SchoolLevel, SubjectCategory, CareerLevel, ItemScoreRecord, EDUVERSAL_SCHOOLS } from '../types';
 import { routeToHash, NEW_OBSERVATION } from '../services/routing';
 import { calculateF2Scores, calculateF2Predicate, COVERAGE_FLOOR } from '../data/frameworkRubrics';
+import { StatBox } from './StatBox';
+import { ActiveFilterChips, FilterChip } from './ActiveFilterChips';
+import { useSharedFilter } from '../services/sharedFilters';
 
 interface OverviewAnalyticsProps {
   appraisals: TeacherAppraisalRecord[];
@@ -57,40 +59,6 @@ const GRAPH_TAB_OPTIONS: Array<{ value: GraphTab; label: string; icon: LucideIco
   { value: 'career_dept', label: 'Levels & Departments', icon: Layers },
   { value: 'ranking', label: 'Teacher Score Spread', icon: TrendingUp },
 ];
-
-type InsightTone = 'indigo' | 'emerald' | 'teal' | 'amber' | 'rose' | 'slate';
-
-const TONE_STYLES: Record<InsightTone, { box: string; icon: string; value: string }> = {
-  indigo: { box: 'bg-indigo-50/60 border-indigo-100', icon: 'bg-indigo-100 text-indigo-700', value: 'text-indigo-700' },
-  emerald: { box: 'bg-emerald-50/60 border-emerald-100', icon: 'bg-emerald-100 text-emerald-700', value: 'text-emerald-700' },
-  teal: { box: 'bg-teal-50/60 border-teal-100', icon: 'bg-teal-100 text-teal-800', value: 'text-teal-800' },
-  amber: { box: 'bg-amber-50/60 border-amber-100', icon: 'bg-amber-100 text-amber-700', value: 'text-amber-700' },
-  rose: { box: 'bg-rose-50/60 border-rose-100', icon: 'bg-rose-100 text-rose-700', value: 'text-rose-700' },
-  slate: { box: 'bg-white border-slate-200', icon: 'bg-slate-100 text-slate-600', value: 'text-slate-900' },
-};
-
-const InsightBox: React.FC<{
-  tone: InsightTone;
-  icon: LucideIcon;
-  label: string;
-  value: React.ReactNode;
-  detail: string;
-  title?: string;
-}> = ({ tone, icon: Icon, label, value, detail, title }) => {
-  const s = TONE_STYLES[tone];
-  return (
-    <div className={`rounded-2xl border p-5 shadow-sm flex flex-col gap-2 min-w-0 ${s.box}`} title={title}>
-      <div className="flex items-center gap-2.5">
-        <span className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${s.icon}`}>
-          <Icon className="w-5 h-5" />
-        </span>
-        <span className="text-sm font-bold text-slate-700 uppercase tracking-wide">{label}</span>
-      </div>
-      <div className={`text-5xl font-extrabold font-mono leading-none tracking-tight ${s.value}`}>{value}</div>
-      <p className="text-sm text-slate-600 leading-snug">{detail}</p>
-    </div>
-  );
-};
 
 const GRADE_BOXES: Array<{ grade: 'A' | 'B' | 'C' | 'D' | 'F'; label: string; box: string; text: string }> = [
   { grade: 'A', label: 'Excellent', box: 'bg-emerald-50 border-emerald-200', text: 'text-emerald-700' },
@@ -123,14 +91,12 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
   appraisals,
   onSelectAppraisal,
 }) => {
-  const [selectedSchool, setSelectedSchool] = useState<string>('All');
-  const [selectedSchoolLevel, setSelectedSchoolLevel] = useState<string>('All');
-  const [selectedCategory, setSelectedCategory] = useState<string>('All');
+  // School, level and subject carry over to and from the School Report.
+  const [selectedSchool, setSelectedSchool] = useSharedFilter('school');
+  const [selectedSchoolLevel, setSelectedSchoolLevel] = useSharedFilter('schoolLevel');
+  const [selectedCategory, setSelectedCategory] = useSharedFilter('subjectCategory');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [activeGraphTab, setActiveGraphTab] = useState<GraphTab>('overview');
-
-  const ActiveViewIcon =
-    GRAPH_TAB_OPTIONS.find((o) => o.value === activeGraphTab)?.icon ?? PieIcon;
 
   // Filter appraisals
   const filteredAppraisals = useMemo(() => {
@@ -322,6 +288,23 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
   const filtersActive =
     selectedSchool !== 'All' || selectedSchoolLevel !== 'All' || selectedCategory !== 'All' || searchQuery !== '';
 
+  const filterChips: FilterChip[] = [
+    ...(searchQuery ? [{ key: 'q', label: `“${searchQuery}”`, onRemove: () => setSearchQuery('') }] : []),
+    ...(selectedSchool !== 'All' ? [{ key: 's', label: selectedSchool, onRemove: () => setSelectedSchool('All') }] : []),
+    ...(selectedSchoolLevel !== 'All'
+      ? [{ key: 'l', label: selectedSchoolLevel, onRemove: () => setSelectedSchoolLevel('All') }]
+      : []),
+    ...(selectedCategory !== 'All'
+      ? [{ key: 'c', label: selectedCategory, onRemove: () => setSelectedCategory('All') }]
+      : []),
+  ];
+  const clearFilters = () => {
+    setSearchQuery('');
+    setSelectedSchool('All');
+    setSelectedSchoolLevel('All');
+    setSelectedCategory('All');
+  };
+
   // Headline insights for the at-a-glance board. Grade-based figures use only
   // graded observations, matching the rest of the page.
   const insights = useMemo(() => {
@@ -364,12 +347,16 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
     const goodOrBetter = (gradeDistribution['A'] || 0) + (gradeDistribution['B'] || 0);
     const needsSupport = (gradeDistribution['D'] || 0) + (gradeDistribution['F'] || 0);
 
-    const ratedDomains = hasDomainData ? domainStats : [];
+    // A domain with nothing rated averages 0, which is an absence of evidence,
+    // not a result: it is left out rather than named as the weakest. The gap is
+    // chosen from the other domains so one domain is never both.
+    const ratedDomains = hasDomainData ? domainStats.filter((d) => d.score > 0) : [];
     const strongestDomain = ratedDomains.length
       ? ratedDomains.reduce((best, d) => (d.score > best.score ? d : best))
       : null;
-    const weakestDomain = ratedDomains.length
-      ? ratedDomains.reduce((low, d) => (d.score < low.score ? d : low))
+    const otherDomains = ratedDomains.filter((d) => d !== strongestDomain);
+    const weakestDomain = otherDomains.length
+      ? otherDomains.reduce((low, d) => (d.score < low.score ? d : low))
       : null;
 
     const campusRanked = Object.entries(campusStats)
@@ -567,6 +554,15 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
         </div>
       </div>
 
+      {/* What is in scope, kept in view while the page is scrolled. */}
+      <div className="sticky top-14 sm:top-16 z-20 bg-white/95 backdrop-blur-md border border-slate-200 rounded-2xl shadow-sm px-4 py-2.5 print:hidden">
+        <ActiveFilterChips
+          chips={filterChips}
+          onClearAll={clearFilters}
+          summary={`Showing ${totalCount} of ${appraisals.length} observations`}
+        />
+      </div>
+
       {/* At-a-glance insight board: every number is large enough to read from
           across a meeting room, with one plain line saying what it means. */}
       <section aria-labelledby="insights-heading" className="space-y-4">
@@ -587,14 +583,14 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
 
         {/* Row 1: the headline results */}
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          <InsightBox
+          <StatBox
             tone="indigo"
             icon={Users}
             label="Observations done"
             value={totalCount}
             detail={`${insights.teacherCount} ${insights.teacherCount === 1 ? 'teacher' : 'teachers'} across ${insights.campusCount} ${insights.campusCount === 1 ? 'campus' : 'campuses'}`}
           />
-          <InsightBox
+          <StatBox
             tone="emerald"
             icon={TrendingUp}
             label="Average score"
@@ -605,14 +601,14 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
                 : 'No graded observations yet'
             }
           />
-          <InsightBox
+          <StatBox
             tone="teal"
             icon={Award}
             label="Rated Good or Excellent"
             value={gradedCount > 0 ? `${insights.goodOrBetterPct}%` : '—'}
             detail={`${insights.goodOrBetter} of ${gradedCount} graded scored Grade A or B`}
           />
-          <InsightBox
+          <StatBox
             tone="amber"
             icon={GraduationCap}
             label="Ready for progression"
@@ -641,7 +637,7 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
 
         {/* Row 3: where the network is strong, and where it needs support */}
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          <InsightBox
+          <StatBox
             tone="emerald"
             icon={CheckCircle2}
             label="Strongest domain"
@@ -649,7 +645,7 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
             title={insights.strongestDomain?.domain}
             detail={insights.strongestDomain ? insights.strongestDomain.domain : 'No indicators rated yet'}
           />
-          <InsightBox
+          <StatBox
             tone={insights.weakestDomain && insights.weakestDomain.score < 75 ? 'rose' : 'slate'}
             icon={Compass}
             label="Domain to develop"
@@ -657,10 +653,12 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
             detail={
               insights.weakestDomain
                 ? `${insights.weakestDomain.domain}${insights.weakestDomain.score < 75 ? ' — below the 75% target' : ''}`
+                : insights.strongestDomain
+                ? 'Only one domain rated so far'
                 : 'No indicators rated yet'
             }
           />
-          <InsightBox
+          <StatBox
             tone="indigo"
             icon={Building2}
             label="Top campus"
@@ -671,7 +669,7 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
                 : 'No graded observations yet'
             }
           />
-          <InsightBox
+          <StatBox
             tone={insights.needsSupport > 0 ? 'rose' : 'slate'}
             icon={AlertTriangle}
             label="Need support"
@@ -686,14 +684,14 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
 
         {/* Row 4: how far the observation cycle has got */}
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-          <InsightBox
+          <StatBox
             tone="teal"
             icon={FileText}
             label="Conferences complete"
             value={insights.finalized}
             detail={`${insights.saved} saved, awaiting conference · ${insights.drafts} in draft`}
           />
-          <InsightBox
+          <StatBox
             tone="indigo"
             icon={CheckCircle2}
             label="Teachers acknowledged"
@@ -704,7 +702,7 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
                 : `${insights.ackPending} still pending a response`
             }
           />
-          <InsightBox
+          <StatBox
             tone="slate"
             icon={BarChart3}
             label="Teaching time observed"
@@ -715,7 +713,7 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
                 : 'No lesson times recorded yet'
             }
           />
-          <InsightBox
+          <StatBox
             tone={provisionalCount > 0 ? 'amber' : 'slate'}
             icon={Layers}
             label="Provisional"
@@ -748,7 +746,7 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
       {/* Interactive Charts Section with Tabs */}
       <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
         {/* Navigation Tabs for Chart Perspectives */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 mb-6 border-b border-slate-100">
+        <div className="pb-4 mb-4 border-b border-slate-100">
           <div>
             <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
               <BarChart3 className="w-5 h-5 text-indigo-600" />
@@ -759,27 +757,31 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
             </p>
           </div>
 
-          <div className="sm:min-w-[260px]">
-            <label htmlFor="analytics-view" className="sr-only">
-              Analytics view
-            </label>
-            <div className="relative">
-              <ActiveViewIcon className="w-4 h-4 text-indigo-600 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <select
-                id="analytics-view"
-                value={activeGraphTab}
-                onChange={(e) => setActiveGraphTab(e.target.value as GraphTab)}
-                className="w-full appearance-none pl-9 pr-9 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 outline-none cursor-pointer transition hover:bg-white focus:bg-white focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+        </div>
+
+        {/* Every view is a visible tab, so what the page can show is never hidden in a menu. */}
+        <div role="tablist" aria-label="Analytics view" className="flex gap-1.5 overflow-x-auto pb-2 mb-5">
+          {GRAPH_TAB_OPTIONS.map((opt) => {
+            const Icon = opt.icon;
+            const selected = activeGraphTab === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                onClick={() => setActiveGraphTab(opt.value)}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold whitespace-nowrap border transition cursor-pointer ${
+                  selected
+                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                    : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                }`}
               >
-                {GRAPH_TAB_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            </div>
-          </div>
+                <Icon className="w-4 h-4" />
+                {opt.label}
+              </button>
+            );
+          })}
         </div>
 
         {/* Tab 1: Grades & Framework Components */}
@@ -826,7 +828,7 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
                   {/* Centered Donut Label */}
                   <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                     <span className="text-2xl font-bold font-mono text-slate-900">{avgF2Pct}%</span>
-                    <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Avg Score</span>
+                    <span className="text-[11px] text-slate-500 uppercase tracking-wider font-semibold">Avg Score</span>
                   </div>
                 </div>
               </div>
@@ -954,9 +956,9 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
                   </div>
                   <div className="flex items-baseline justify-between">
                     <span className="text-lg font-bold font-mono text-slate-900">{c.f2Avg}%</span>
-                    <span className="text-[10px] text-emerald-600 font-medium font-mono">{c.count} staff</span>
+                    <span className="text-[11px] text-emerald-600 font-medium font-mono">{c.count} staff</span>
                   </div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">Grade A: {c.aCount}</div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">Grade A: {c.aCount}</div>
                 </div>
               ))}
             </div>
@@ -1273,7 +1275,7 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({
                     <td className="py-3 px-4">
                       <div className="text-xs font-semibold text-teal-800">{a.schoolName || 'Eduversal School'}</div>
                       <div className="text-[11px] text-slate-600 font-medium">{a.schoolLevel}</div>
-                      <div className="text-[10px] text-slate-400">{a.gradeClass || 'General'}</div>
+                      <div className="text-[11px] text-slate-400">{a.gradeClass || 'General'}</div>
                     </td>
 
                     <td className="py-3 px-4">

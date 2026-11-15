@@ -149,7 +149,7 @@ export const RubricReferenceModal: React.FC<RubricReferenceModalProps> = ({
                       <h4 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
                         {item.title}
                         {item.theoryBasis && (
-                          <span className="text-[10px] font-normal text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
+                          <span className="text-[11px] font-normal text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
                             {item.theoryBasis}
                           </span>
                         )}

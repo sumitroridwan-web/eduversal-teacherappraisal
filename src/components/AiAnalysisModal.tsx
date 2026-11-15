@@ -102,7 +102,7 @@ export const AiAnalysisModal: React.FC<AiAnalysisModalProps> = ({
                   <Brain className="w-4 h-4 text-purple-600" />
                   Higher-Order Thinking
                 </span>
-                <span className="text-[10px] text-purple-700 font-mono bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200 font-medium">
+                <span className="text-[11px] text-purple-700 font-mono bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200 font-medium">
                   Bloom&apos;s HOTS
                 </span>
               </div>
@@ -226,7 +226,7 @@ export const AiAnalysisModal: React.FC<AiAnalysisModalProps> = ({
                     <div className="flex-1">
                       <div className="flex items-center justify-between">
                         <span className="text-xs font-bold text-slate-900">{scoreItem.indicatorCode}</span>
-                        <span className="text-[10px] text-slate-500 font-medium">
+                        <span className="text-[11px] text-slate-500 font-medium">
                           {scoreItem.score === 4
                             ? 'Distinguished'
                             : scoreItem.score === 3

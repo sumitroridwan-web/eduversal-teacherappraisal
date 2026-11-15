@@ -16,6 +16,7 @@ import { Navbar } from './components/Navbar';
 import { AppraisalForm } from './components/AppraisalForm';
 import { AppraisalList } from './components/AppraisalList';
 import { OverviewAnalytics } from './components/OverviewAnalytics';
+import { Breadcrumbs } from './components/Breadcrumbs';
 import { ReportView } from './components/ReportView';
 import { SchoolReportView } from './components/SchoolReportView';
 import { WalkthroughView } from './components/WalkthroughView';
@@ -290,8 +291,26 @@ export default function App() {
 
       <SyncStatusBar lastSyncAt={lastSyncAt} />
 
+      {/* Content column, offset for the sidebar on wide screens */}
+      <div className="flex-1 flex flex-col lg:pl-24 2xl:pl-60">
       {/* Main App Content View Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 pb-24 md:pb-8">
+        {(currentView === 'FORM' || currentView === 'REPORT') && (
+          <Breadcrumbs
+            items={[
+              { label: 'Portfolio', href: routeToHash({ view: 'LIST' }) },
+              {
+                label: currentAppraisal?.teacherName?.trim() || (isDraftRoute ? 'New observation' : 'Observation'),
+                href:
+                  currentView === 'REPORT' && currentAppraisal
+                    ? routeToHash({ view: 'FORM', appraisalId: currentAppraisal.id })
+                    : undefined,
+              },
+              ...(currentView === 'REPORT' ? [{ label: 'Report' }] : [{ label: 'Observation sheet' }]),
+            ]}
+          />
+        )}
+
         {currentView === 'LIST' && (
           <AppraisalList
             appraisals={appraisals}
@@ -369,13 +388,6 @@ export default function App() {
         )}
       </main>
 
-      {/* Global Rubric Handbook Modal */}
-      <RubricReferenceModal
-        isOpen={isRubricModalOpen}
-        onClose={() => setIsRubricModalOpen(false)}
-        currentLevel={rubricLevel}
-      />
-
       {/* Footer */}
       <footer className="border-t border-slate-200 bg-white py-6 text-center text-xs text-slate-500 print:hidden shadow-xs">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
@@ -383,6 +395,14 @@ export default function App() {
           <span className="text-slate-400">Charlotte Danielson Framework for Teaching &amp; Robert Marzano Domain Alignment</span>
         </div>
       </footer>
+      </div>
+
+      {/* Global Rubric Handbook Modal */}
+      <RubricReferenceModal
+        isOpen={isRubricModalOpen}
+        onClose={() => setIsRubricModalOpen(false)}
+        currentLevel={rubricLevel}
+      />
     </div>
   );
 }

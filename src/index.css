@@ -1,1 +1,9 @@
 @import "tailwindcss";
+
+/* Readability: the smallest everyday text size is 13px rather than 12px.
+   Most of the platform's body copy, labels and table text is text-xs, so this
+   one change lifts all of it without touching each screen. */
+@theme {
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.125rem;
+}

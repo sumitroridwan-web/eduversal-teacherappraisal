@@ -173,7 +173,7 @@ export const AutoGradeModal: React.FC<AutoGradeModalProps> = ({
                     <span className="text-xl font-bold font-mono text-slate-900">
                       {currentTotal} / {maxPossible}
                     </span>
-                    <span className="text-[10px] text-slate-400">pts</span>
+                    <span className="text-[11px] text-slate-400">pts</span>
                   </div>
                 </div>
 
@@ -181,16 +181,16 @@ export const AutoGradeModal: React.FC<AutoGradeModalProps> = ({
                   <span className="text-[11px] text-slate-500 font-medium block">Indicators Rated</span>
                   <div className="flex items-baseline gap-1.5 mt-0.5">
                     <span className="text-xl font-bold text-teal-700">{ratedCount}</span>
-                    <span className="text-[10px] text-slate-400">of {result.scores.length}</span>
+                    <span className="text-[11px] text-slate-400">of {result.scores.length}</span>
                   </div>
                   {notObservableCount > 0 && (
-                    <span className="text-[10px] text-slate-500 block mt-0.5">
+                    <span className="text-[11px] text-slate-500 block mt-0.5">
                       {notObservableCount} not observable
                     </span>
                   )}
                   {!!result.citationsWithdrawn && (
                     <span
-                      className="text-[10px] text-amber-700 block mt-0.5 font-medium"
+                      className="text-[11px] text-amber-700 block mt-0.5 font-medium"
                       title="These ratings cited evidence that could not be found in the captured record, so they were withdrawn rather than shown to you as scores."
                     >
                       {result.citationsWithdrawn} withdrawn — citation not found
@@ -202,7 +202,7 @@ export const AutoGradeModal: React.FC<AutoGradeModalProps> = ({
                   <span className="text-[11px] text-slate-500 font-medium block">Activities Factored</span>
                   <div className="flex items-baseline gap-1.5 mt-0.5">
                     <span className="text-xl font-bold text-amber-600">{result.activitiesEvaluatedCount}</span>
-                    <span className="text-[10px] text-slate-400">phases</span>
+                    <span className="text-[11px] text-slate-400">phases</span>
                   </div>
                 </div>
               </div>
@@ -286,9 +286,9 @@ export const AutoGradeModal: React.FC<AutoGradeModalProps> = ({
                                 {scItem.indicatorCode}
                               </span>
                               <span className="font-bold text-slate-900">{scItem.title}</span>
-                              <span className="text-[10px] text-slate-400">{scItem.domainId}</span>
+                              <span className="text-[11px] text-slate-400">{scItem.domainId}</span>
                               {current.score === null && (
-                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                                <span className="text-[11px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
                                   NOT OBSERVABLE
                                 </span>
                               )}
@@ -306,7 +306,7 @@ export const AutoGradeModal: React.FC<AutoGradeModalProps> = ({
                                 {scItem.evidenceRefs.map((ref, i) => (
                                   <li
                                     key={i}
-                                    className="text-[10px] text-slate-500 pl-2 border-l-2 border-slate-200 break-words"
+                                    className="text-[11px] text-slate-500 pl-2 border-l-2 border-slate-200 break-words"
                                   >
                                     {ref}
                                   </li>
@@ -320,7 +320,7 @@ export const AutoGradeModal: React.FC<AutoGradeModalProps> = ({
                             <button
                               type="button"
                               onClick={() => handleScoreChange(scItem.indicatorCode, null)}
-                              className={`px-2 h-8 rounded-lg text-[10px] font-bold transition cursor-pointer ${
+                              className={`px-2 h-8 rounded-lg text-[11px] font-bold transition cursor-pointer ${
                                 current.score === null
                                   ? 'bg-slate-600 text-white shadow-xs'
                                   : 'text-slate-500 hover:text-slate-800 hover:bg-slate-200'

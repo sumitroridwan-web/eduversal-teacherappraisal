@@ -284,7 +284,7 @@ export const LessonActivitiesManager: React.FC<LessonActivitiesManagerProps> = (
                   key={idx}
                   type="button"
                   onClick={() => setName(preset)}
-                  className={`text-[10px] px-2.5 py-1 rounded-lg border transition cursor-pointer text-left ${
+                  className={`text-[11px] px-2.5 py-1 rounded-lg border transition cursor-pointer text-left ${
                     name === preset
                       ? 'bg-teal-600 text-white border-teal-700 font-semibold'
                       : 'bg-white text-slate-700 border-slate-200 hover:bg-teal-50 hover:border-teal-300'
@@ -356,7 +356,7 @@ export const LessonActivitiesManager: React.FC<LessonActivitiesManagerProps> = (
             <div>
               <label className="block text-slate-700 font-semibold mb-1 flex items-center justify-between">
                 <span>Teacher Actions &amp; Questions Asked</span>
-                <span className="text-[10px] text-slate-400 font-normal">Pacing, modeling, scaffolding</span>
+                <span className="text-[11px] text-slate-400 font-normal">Pacing, modeling, scaffolding</span>
               </label>
               <textarea
                 value={teacherNotes}
@@ -370,7 +370,7 @@ export const LessonActivitiesManager: React.FC<LessonActivitiesManagerProps> = (
             <div>
               <label className="block text-slate-700 font-semibold mb-1 flex items-center justify-between">
                 <span>Student Responses &amp; Observable Evidence</span>
-                <span className="text-[10px] text-slate-400 font-normal">Engagement, dialogue, misconceptions</span>
+                <span className="text-[11px] text-slate-400 font-normal">Engagement, dialogue, misconceptions</span>
               </label>
               <textarea
                 value={studentEvidenceNotes}
@@ -450,12 +450,12 @@ export const LessonActivitiesManager: React.FC<LessonActivitiesManagerProps> = (
                       <div className="flex flex-wrap items-center gap-2 mb-1">
                         <h4 className="text-sm font-bold text-slate-900">{act.name}</h4>
                         {act.modality && (
-                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                          <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
                             {act.modality}
                           </span>
                         )}
                         {(act.timeRange || act.durationMinutes) && (
-                          <span className="text-[10px] text-slate-500 font-mono flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
+                          <span className="text-[11px] text-slate-500 font-mono flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
                             <Clock className="w-3 h-3 text-slate-400" />
                             {act.timeRange || `${act.durationMinutes} mins`}
                           </span>

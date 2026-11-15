@@ -754,7 +754,7 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
           <div>
             <h3 className="text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2 flex-wrap">
               <span>Live Lesson Audio Capture &amp; AI</span>
-              <span className="text-[10px] sm:text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+              <span className="text-[11px] sm:text-xs font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
                 Gemini 3.7 Flash
               </span>
             </h3>
@@ -943,7 +943,7 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
             </button>
 
             {isRecording && !isPaused && (
-              <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-red-600 bg-red-50 border border-red-100 px-2 py-0.5 rounded-full">
+              <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-red-600 bg-red-50 border border-red-100 px-2 py-0.5 rounded-full">
                 <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-ping" />
                 Live
               </span>
@@ -1027,7 +1027,7 @@ export const AudioLessonRecorder: React.FC<AudioLessonRecorderProps> = ({
             captured, not a record of the lesson. */}
         {isRecording && (
           <div className="mb-2 p-2.5 rounded-xl bg-slate-50 border border-dashed border-slate-200">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1">
               Listening - a live check, not saved to the record
             </p>
             <p className="text-[11px] text-slate-500 font-mono leading-relaxed break-words">

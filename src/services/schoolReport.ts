@@ -111,7 +111,10 @@ function buildStatBoxes(args: {
 
   const rated = domainAverages.filter((d) => d.rated > 0);
   const strongest = rated.length ? rated.reduce((a, b) => (b.score > a.score ? b : a)) : null;
-  const weakest = rated.length ? rated.reduce((a, b) => (b.score < a.score ? b : a)) : null;
+  // Picked from the domains other than the strongest, so a single rated domain
+  // is never named as both the strength and the gap.
+  const others = strongest ? rated.filter((d) => d !== strongest) : [];
+  const weakest = others.length ? others.reduce((a, b) => (b.score < a.score ? b : a)) : null;
 
   const scores = graded.map((o) => o.percentage);
   const high = scores.length ? Math.max(...scores) : 0;
@@ -150,7 +153,12 @@ function buildStatBoxes(args: {
     },
     {
       label: 'Score range',
-      value: scores.length ? (high === low ? `${high}%` : `${low}–${high}%`) : '—',
+      // Whole numbers, so the range reads at a glance; the gap below is exact.
+      value: scores.length
+        ? Math.round(high) === Math.round(low)
+          ? `${Math.round(high)}%`
+          : `${Math.round(low)}–${Math.round(high)}%`
+        : '—',
       insight: scores.length > 1
         ? `${Math.round((high - low) * 10) / 10} points between lowest and highest lesson`
         : scores.length
@@ -169,8 +177,10 @@ function buildStatBoxes(args: {
       value: weakest ? `${weakest.score}%` : '—',
       insight: weakest
         ? `${weakest.domain}${weakest.score < DOMAIN_TARGET ? `, below the ${DOMAIN_TARGET}% target` : ''}`
+        : strongest
+        ? 'Only one domain rated so far'
         : 'No indicators rated yet',
-      tone: weakest && weakest.score < DOMAIN_TARGET ? 'rose' : 'amber',
+      tone: !weakest ? 'slate' : weakest.score < DOMAIN_TARGET ? 'rose' : 'amber',
     },
     {
       label: 'Top focus area',

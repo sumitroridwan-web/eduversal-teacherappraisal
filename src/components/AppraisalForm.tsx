@@ -603,7 +603,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
       onClick={() => handleWriteSection(section)}
       disabled={writingSection !== null}
       title={`Write ${DEFAULT_FEEDBACK_ITEMS} detailed ${SECTION_LABEL[section]} entries from the observation notes and the ratings given`}
-      className={`flex items-center gap-1 px-2 py-1 text-white text-[10px] font-bold rounded-lg transition shadow-2xs whitespace-nowrap cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${buttonClasses}`}
+      className={`flex items-center gap-1 px-2 py-1 text-white text-[11px] font-bold rounded-lg transition shadow-2xs whitespace-nowrap cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${buttonClasses}`}
     >
       {writingSection === section ? (
         <Loader2 className="w-3 h-3 animate-spin" />
@@ -1447,7 +1447,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
           {/* Subtotals breakdown grid */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 flex-1">
             <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-              <div className="text-[10px] sm:text-[11px] text-slate-500 uppercase tracking-wider font-semibold">
+              <div className="text-[11px] sm:text-[11px] text-slate-500 uppercase tracking-wider font-semibold">
                 A) Pre-Visit
               </div>
               <div className="text-lg sm:text-xl font-bold font-mono text-slate-900 mt-0.5">
@@ -1456,7 +1456,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
             </div>
 
             <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-              <div className="text-[10px] sm:text-[11px] text-slate-500 uppercase tracking-wider font-semibold">
+              <div className="text-[11px] sm:text-[11px] text-slate-500 uppercase tracking-wider font-semibold">
                 B) Live Obs
               </div>
               <div className="text-lg sm:text-xl font-bold font-mono text-slate-900 mt-0.5">
@@ -1465,7 +1465,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
             </div>
 
             <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-              <div className="text-[10px] sm:text-[11px] text-slate-500 uppercase tracking-wider font-semibold">
+              <div className="text-[11px] sm:text-[11px] text-slate-500 uppercase tracking-wider font-semibold">
                 C) Post-Lesson
               </div>
               <div className="text-lg sm:text-xl font-bold font-mono text-slate-900 mt-0.5">
@@ -1474,7 +1474,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
             </div>
 
             <div className="bg-indigo-50/70 p-2.5 rounded-xl border border-indigo-100">
-              <div className="text-[10px] sm:text-[11px] text-indigo-700 uppercase tracking-wider font-bold">
+              <div className="text-[11px] sm:text-[11px] text-indigo-700 uppercase tracking-wider font-bold">
                 Total F2 Raw
               </div>
               <div className="text-lg sm:text-xl font-black font-mono text-indigo-700 mt-0.5">
@@ -1502,7 +1502,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
             <div
               className={`w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center font-black border shadow-sm shrink-0 ${
                 stats.provisional
-                  ? 'bg-slate-50 text-slate-400 border-slate-200 text-[10px] uppercase tracking-wider font-bold leading-tight text-center'
+                  ? 'bg-slate-50 text-slate-400 border-slate-200 text-[11px] uppercase tracking-wider font-bold leading-tight text-center'
                   : stats.grade === 'A'
                   ? 'bg-emerald-50 text-emerald-600 border-emerald-200 text-xl sm:text-2xl'
                   : stats.grade === 'B'
@@ -1713,15 +1713,15 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
             <Keyboard className="w-3.5 h-3.5 shrink-0 text-slate-400" />
             <span>
               Click an indicator card, then press{' '}
-              <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono text-[10px]">
+              <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono text-[11px]">
                 1
               </kbd>
               –
-              <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono text-[10px]">
+              <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono text-[11px]">
                 4
               </kbd>{' '}
               to rate it and move to the next unrated, or{' '}
-              <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono text-[10px]">
+              <kbd className="px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded font-mono text-[11px]">
                 Enter
               </kbd>{' '}
               to skip.
@@ -1758,7 +1758,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
                         {item.domainId} • Section {item.section}
                       </span>
                       {item.theoryBasis && (
-                        <span className="text-[10px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 font-medium">
+                        <span className="text-[11px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 font-medium">
                           {item.theoryBasis}
                         </span>
                       )}
@@ -1769,7 +1769,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
                             type="button"
                             onClick={() => handleConfirmSuggestion(item.id)}
                             title="This rating came from the AI. Confirm it as your professional judgement."
-                            className="text-[10px] font-bold px-2 py-0.5 rounded border bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100 transition cursor-pointer"
+                            className="text-[11px] font-bold px-2 py-0.5 rounded border bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100 transition cursor-pointer"
                           >
                             AI SUGGESTED — CONFIRM
                           </button>
@@ -1777,7 +1777,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
                       {currentScoreRecord.origin === 'ai-confirmed' && (
                         <span
                           title="AI suggestion, confirmed by the appraiser"
-                          className="text-[10px] font-bold px-2 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200"
+                          className="text-[11px] font-bold px-2 py-0.5 rounded border bg-emerald-50 text-emerald-700 border-emerald-200"
                         >
                           AI · CONFIRMED
                         </span>
@@ -1860,7 +1860,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
                             }`}
                           >
                             <span className="text-sm sm:text-xs font-bold leading-none">{sc}</span>
-                            <span className="text-[9px] opacity-85 leading-none mt-0.5">
+                            <span className="text-[11px] opacity-85 leading-none mt-0.5">
                               {sc === 4 ? 'Dist' : sc === 3 ? 'Prof' : sc === 2 ? 'Basic' : 'Unsat'}
                             </span>
                           </button>
@@ -1968,7 +1968,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
                     <div className="flex items-center gap-2 mt-1.5">
                       <label
                         htmlFor={`evidence-src-${item.id}`}
-                        className="text-[10px] text-slate-500 font-medium shrink-0"
+                        className="text-[11px] text-slate-500 font-medium shrink-0"
                       >
                         Evidence source
                       </label>
@@ -1976,7 +1976,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
                         id={`evidence-src-${item.id}`}
                         value={currentScoreRecord.evidenceSource || 'Live Classroom Observation'}
                         onChange={(e) => handleUpdateEvidenceSource(item.id, e.target.value as EvidenceSource)}
-                        className="text-[10px] px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 outline-none cursor-pointer focus:border-indigo-400"
+                        className="text-[11px] px-2 py-1 bg-slate-50 border border-slate-200 rounded-lg text-slate-700 outline-none cursor-pointer focus:border-indigo-400"
                       >
                         {EVIDENCE_SOURCES.map((src) => (
                           <option key={src} value={src}>{src}</option>
@@ -1999,7 +1999,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
                         focusNotes(item.id);
                       }}
                       title="Stamp the current time on a new line"
-                      className="flex items-center justify-center gap-1 text-[10px] text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-2 py-1.5 rounded-lg border border-slate-200 transition cursor-pointer whitespace-nowrap"
+                      className="flex items-center justify-center gap-1 text-[11px] text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-2 py-1.5 rounded-lg border border-slate-200 transition cursor-pointer whitespace-nowrap"
                     >
                       <Timer className="w-3 h-3 shrink-0" />
                       {clockTime()}
@@ -2017,7 +2017,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
                           focusNotes(item.id);
                         }}
                         title={`Start an evidence note about ${prompt.toLowerCase()}`}
-                        className="text-[10px] text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-2 py-1.5 rounded-lg border border-slate-200 transition cursor-pointer whitespace-nowrap"
+                        className="text-[11px] text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-2 py-1.5 rounded-lg border border-slate-200 transition cursor-pointer whitespace-nowrap"
                       >
                         {prompt}…
                       </button>
@@ -2429,7 +2429,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
               {stats.itemsScored}/{stats.totalItems}
             </strong>
             {!stats.isComplete && (
-              <span className="text-[10px] text-slate-400 ml-1">
+              <span className="text-[11px] text-slate-400 ml-1">
                 ({stats.totalItems - stats.itemsScored} {t('sheet.notEvidenced')})
               </span>
             )}
@@ -2451,7 +2451,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
 
           <span className="text-slate-300">|</span>
           <span
-            className={`text-[10px] ${
+            className={`text-[11px] ${
               isUnsaved || autoSaveState === 'error'
                 ? 'text-amber-600 font-semibold'
                 : 'text-slate-400'

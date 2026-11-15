@@ -91,7 +91,7 @@ export const SheetSectionRail: React.FC<SheetSectionRailProps> = ({
           <div
             className={`w-12 h-12 rounded-xl border flex items-center justify-center font-black shrink-0 ${
               score.provisional
-                ? 'bg-slate-50 text-slate-400 border-slate-200 text-[10px] uppercase'
+                ? 'bg-slate-50 text-slate-400 border-slate-200 text-[11px] uppercase'
                 : `${GRADE_TONE[score.grade] || GRADE_TONE.F} text-2xl`
             }`}
           >
