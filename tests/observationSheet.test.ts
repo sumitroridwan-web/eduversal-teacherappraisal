@@ -190,3 +190,56 @@ describe('carryContext', () => {
     });
   });
 });
+
+import { buildSheetSteps, missingDetails } from '../src/services/observationSheet';
+import { createBlankAppraisal } from '../src/services/storage';
+import { getItemsForLevel as itemsFor, COVERAGE_FLOOR as FLOOR } from '../src/data/frameworkRubrics';
+
+describe('section rail', () => {
+  const fresh = () => {
+    (globalThis as any).localStorage ??= { getItem: () => null, setItem: () => {}, removeItem: () => {} };
+    return createBlankAppraisal() as any;
+  };
+
+  test('lists the five parts of the sheet in working order', () => {
+    const steps = buildSheetSteps(fresh(), itemsFor('Proficient'), FLOOR);
+    assert.deepEqual(steps.map((s) => s.key), ['details', 'capture', 'rate', 'debrief', 'finalise']);
+  });
+
+  test('names the details still missing on a new sheet', () => {
+    const record = fresh();
+    const details = buildSheetSteps(record, itemsFor('Proficient'), FLOOR)[0];
+    assert.equal(details.state, 'partial');
+    assert.ok(details.summary.includes('Teacher'), details.summary);
+    assert.deepEqual(missingDetails(record), ['Teacher', 'Subject', 'Class']);
+  });
+
+  test('counts ratings per section and says how many a grade still needs', () => {
+    const record = fresh();
+    const items = itemsFor('Proficient');
+    items.filter((i) => i.section === 'A').forEach((i) => (record.scores[i.id] = { score: 3, notes: '' }));
+    const rate = buildSheetSteps(record, items, FLOOR)[2];
+    assert.equal(rate.state, 'partial');
+    assert.equal(rate.children![0].state, 'done', 'section A is fully rated');
+    assert.equal(rate.children![1].state, 'todo');
+    assert.ok(/more for a grade/.test(rate.summary), rate.summary);
+  });
+
+  test('capture is complete once notes are written, and counts the other evidence', () => {
+    const record = fresh();
+    record.generalObserverNotes = 'Starter on the board within two minutes.';
+    record.photos = [{ id: 'p', caption: '', source: 'Camera', capturedAt: '', isBestPractice: true }];
+    const capture = buildSheetSteps(record, itemsFor('Proficient'), FLOOR)[1];
+    assert.equal(capture.state, 'done');
+    assert.equal(capture.summary, '2 of 4 kinds of evidence');
+    assert.equal(capture.children!.find((c) => c.key === 'capture-photos')!.summary, '1 photo, 1 starred');
+  });
+
+  test('finalising is done only when the observation is finalised', () => {
+    const record = fresh();
+    record.teacherAcknowledgement = { status: 'Acknowledged' };
+    assert.equal(buildSheetSteps(record, itemsFor('Proficient'), FLOOR)[4].state, 'partial');
+    record.status = 'Finalized (Conference Complete)';
+    assert.equal(buildSheetSteps(record, itemsFor('Proficient'), FLOOR)[4].state, 'done');
+  });
+});

@@ -78,7 +78,7 @@ export const EduversalLogo: React.FC<EduversalLogoProps> = ({
         >
           EDUVERSAL
         </span>
-        <span className="text-[10px] tracking-wider text-slate-500 font-medium mt-0.5">
+        <span className="text-[11px] tracking-wider text-slate-500 font-medium mt-0.5">
           TEACHER APPRAISAL
         </span>
       </div>

@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import {
   Download,
   Printer,
@@ -14,6 +15,8 @@ import {
   Sparkles,
   FileCheck,
   Star,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -27,6 +30,8 @@ import {
   LEVEL_SCORING_CONFIGS,
 } from '../data/frameworkRubrics';
 import { splitObserverNotes } from '../services/autoGrader';
+import { ReportJumpBar, JumpLink } from './ReportJumpBar';
+import { useScrollSpy } from '../hooks/useScrollSpy';
 
 /**
  * Strips a bullet or dash the appraiser typed at the head of a note line, so
@@ -77,10 +82,40 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
     domainGroups[item.domainId].push(item);
   });
 
+  // Long sections fold on screen only. Print shows them through CSS, and the
+  // PDF export opens them before it photographs the page.
+  const [showTimeline, setShowTimeline] = useState(true);
+  const [showIndicators, setShowIndicators] = useState(false);
+  const [forceOpen, setForceOpen] = useState(false);
+  const timelineOpen = showTimeline || forceOpen;
+  const indicatorsOpen = showIndicators || forceOpen;
+  const ratedCount = items.filter((i) => typeof record.scores[i.id]?.score === 'number').length;
+
+  const hasConditions = Boolean(record.aiAnalysis?.classroomConditions?.length);
+  const hasResponse = Boolean(
+    record.teacherAcknowledgement && record.teacherAcknowledgement.status !== 'Pending'
+  );
+  const hasTimeline = Boolean(record.activities?.length);
+  const jumpLinks: JumpLink[] = [
+    { id: 'rep-summary', label: 'Summary' },
+    ...(hasConditions ? [{ id: 'rep-conditions', label: 'Classroom' }] : []),
+    ...(photos.length ? [{ id: 'rep-photos', label: `Photos (${photos.length})` }] : []),
+    ...(hasResponse ? [{ id: 'rep-response', label: 'Teacher response' }] : []),
+    ...(hasTimeline ? [{ id: 'rep-timeline', label: 'Timeline' }] : []),
+    { id: 'rep-debrief', label: 'Glow / Grow / Go' },
+    { id: 'rep-indicators', label: 'Indicators' },
+    { id: 'rep-signoff', label: 'Progression & sign-off' },
+  ];
+  const activeSection = useScrollSpy(jumpLinks.map((l) => l.id));
+
   // Export to PDF using html2canvas + jsPDF
   const handleExportPdf = async () => {
     if (!reportRef.current) return;
     setIsExporting(true);
+    // Every folded section goes into the PDF, so open them all and let the
+    // browser lay the page out before the snapshot is taken.
+    flushSync(() => setForceOpen(true));
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 
     try {
       const element = reportRef.current;
@@ -117,6 +152,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
       console.error('PDF export failed:', err);
       window.print();
     } finally {
+      setForceOpen(false);
       setIsExporting(false);
     }
   };
@@ -127,40 +163,45 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
 
   return (
     <div className="space-y-6">
-      {/* Top Header Actions (Non-printable) */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 print:hidden text-slate-800">
-        <button
-          type="button"
-          onClick={onBack}
-          className="flex items-center justify-center gap-2 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition cursor-pointer min-h-[40px]"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Back to Observation Sheet</span>
-        </button>
-
-        <div className="grid grid-cols-1 sm:flex sm:items-center gap-2">
+      {/* Actions and section links, kept on screen while the report is read. */}
+      <ReportJumpBar
+        links={jumpLinks}
+        activeId={activeSection}
+        leading={
           <button
-            id="btn-print-report"
             type="button"
-            onClick={handlePrint}
-            className="flex items-center justify-center gap-2 px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold border border-slate-200 transition cursor-pointer shadow-2xs min-h-[40px]"
+            onClick={onBack}
+            className="flex items-center justify-center gap-2 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition cursor-pointer min-h-[40px]"
           >
-            <Printer className="w-4 h-4 text-slate-500" />
-            <span>Browser Print</span>
+            <ArrowLeft className="w-4 h-4" />
+            <span>Back to Observation Sheet</span>
           </button>
+        }
+        trailing={
+          <>
+            <button
+              id="btn-print-report"
+              type="button"
+              onClick={handlePrint}
+              className="flex items-center justify-center gap-2 px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold border border-slate-200 transition cursor-pointer shadow-2xs min-h-[40px]"
+            >
+              <Printer className="w-4 h-4 text-slate-500" />
+              <span>Print</span>
+            </button>
 
-          <button
-            id="btn-download-pdf"
-            type="button"
-            onClick={handleExportPdf}
-            disabled={isExporting}
-            className="flex items-center justify-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer min-h-[40px]"
-          >
-            <Download className="w-4 h-4" />
-            <span>{isExporting ? 'Generating PDF...' : 'Download Official PDF Report'}</span>
-          </button>
-        </div>
-      </div>
+            <button
+              id="btn-download-pdf"
+              type="button"
+              onClick={handleExportPdf}
+              disabled={isExporting}
+              className="flex items-center justify-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer min-h-[40px]"
+            >
+              <Download className="w-4 h-4" />
+              <span>{isExporting ? 'Generating PDF...' : 'Download PDF'}</span>
+            </button>
+          </>
+        }
+      />
 
       {/* Printable Report Canvas */}
       <div
@@ -201,7 +242,10 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
         </div>
 
         {/* Teacher & Observation Metadata Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs mb-6">
+        <div
+          id="rep-summary"
+          className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs mb-6 scroll-mt-40"
+        >
           <div>
             <span className="text-slate-500 block">School / Campus:</span>
             <strong className="text-teal-900 text-sm font-bold block">{record.schoolName || 'Eduversal Partner School'}</strong>
@@ -246,7 +290,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
           {/* Section Raw Scores */}
           <div className="md:col-span-8 grid grid-cols-3 gap-3 self-center">
             <div className="p-3 bg-white/10 rounded-lg border border-white/10">
-              <span className="text-[10px] text-slate-300 uppercase tracking-wider block font-semibold">
+              <span className="text-[11px] text-slate-300 uppercase tracking-wider block font-semibold">
                 A) Pre-Visit / Plan
               </span>
               <div className="text-xl font-bold font-mono mt-0.5">
@@ -255,7 +299,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
             </div>
 
             <div className="p-3 bg-white/10 rounded-lg border border-white/10">
-              <span className="text-[10px] text-slate-300 uppercase tracking-wider block font-semibold">
+              <span className="text-[11px] text-slate-300 uppercase tracking-wider block font-semibold">
                 B) Live Observation
               </span>
               <div className="text-xl font-bold font-mono mt-0.5">
@@ -264,7 +308,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
             </div>
 
             <div className="p-3 bg-white/10 rounded-lg border border-white/10">
-              <span className="text-[10px] text-slate-300 uppercase tracking-wider block font-semibold">
+              <span className="text-[11px] text-slate-300 uppercase tracking-wider block font-semibold">
                 C) Post-Lesson Sheet
               </span>
               <div className="text-xl font-bold font-mono mt-0.5">
@@ -288,7 +332,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
 
           {/* Indicative Reading Badge */}
           <div className="md:col-span-4 flex flex-col items-center justify-center p-3 bg-white/10 rounded-lg border border-white/15 text-center">
-            <span className="text-[10px] text-slate-300 uppercase tracking-wider font-semibold">
+            <span className="text-[11px] text-slate-300 uppercase tracking-wider font-semibold">
               F2 Indicative Reading
             </span>
             {stats.provisional ? (
@@ -334,17 +378,17 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
             <div className="p-2 bg-sky-50 rounded-lg border border-sky-200">
-              <div className="text-[10px] text-sky-800 font-semibold">F2 Observed Score</div>
+              <div className="text-[11px] text-sky-800 font-semibold">F2 Observed Score</div>
               <div className="font-bold font-mono text-sky-900 text-sm mt-0.5">{comp.f2Percent}%</div>
             </div>
             <div className="p-2 bg-white rounded-lg border border-slate-200">
-              <div className="text-[10px] text-slate-500">Raw Points</div>
+              <div className="text-[11px] text-slate-500">Raw Points</div>
               <div className="font-bold font-mono text-slate-800 text-sm mt-0.5">
                 {stats.totalRaw} / {stats.maxTotal}
               </div>
             </div>
             <div className="p-2 bg-white rounded-lg border border-slate-200">
-              <div className="text-[10px] text-slate-500">Indicative Grade</div>
+              <div className="text-[11px] text-slate-500">Indicative Grade</div>
               <div
                 className={`font-bold font-mono text-sm mt-0.5 ${
                   stats.provisional ? 'text-slate-400' : 'text-slate-800'
@@ -354,7 +398,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
               </div>
             </div>
             <div className="p-2 bg-white rounded-lg border border-slate-200">
-              <div className="text-[10px] text-slate-500">Indicators Rated</div>
+              <div className="text-[11px] text-slate-500">Indicators Rated</div>
               <div
                 className={`font-bold font-mono text-sm mt-0.5 ${
                   stats.isComplete ? 'text-slate-800' : 'text-amber-700'
@@ -401,10 +445,10 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
 
         {/* Classroom Conditions Read Against Management Theory */}
         {record.aiAnalysis?.classroomConditions && record.aiAnalysis.classroomConditions.length > 0 && (
-          <div className="mb-8">
+          <div id="rep-conditions" className="mb-8 scroll-mt-40">
             <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3 pb-1 border-b border-slate-200 flex items-center justify-between">
               <span>Classroom Conditions &amp; Management Analysis</span>
-              <span className="text-[10px] text-slate-500 font-normal">Evidenced from lesson audio</span>
+              <span className="text-[11px] text-slate-500 font-normal">Evidenced from lesson audio</span>
             </h3>
 
             <div className="space-y-2.5 text-xs">
@@ -414,12 +458,12 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
                     <span className="font-mono text-[11px] font-bold px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-700">
                       {c.timeLabel}
                     </span>
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-700">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-700">
                       {c.theory}
                     </span>
                     {c.impact && (
                       <span
-                        className={`text-[10px] font-semibold px-1.5 py-0.5 rounded border ${
+                        className={`text-[11px] font-semibold px-1.5 py-0.5 rounded border ${
                           c.impact === 'Supports Learning'
                             ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                             : c.impact === 'Disrupts Learning'
@@ -441,10 +485,10 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
 
         {/* Classroom Photo Evidence */}
         {photos.length > 0 && (
-          <div className="mb-8">
+          <div id="rep-photos" className="mb-8 scroll-mt-40">
             <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3 pb-1 border-b border-slate-200 flex items-center justify-between">
               <span>Classroom Photo Evidence ({photos.length})</span>
-              <span className="text-[10px] text-slate-500 font-normal">Captured during observation</span>
+              <span className="text-[11px] text-slate-500 font-normal">Captured during observation</span>
             </h3>
 
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -457,7 +501,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
                       className="w-full h-32 object-cover"
                     />
                   ) : (
-                    <div className="w-full h-32 bg-slate-50 border-b border-slate-200 flex items-center justify-center text-center px-2 text-[10px] text-slate-400 leading-snug">
+                    <div className="w-full h-32 bg-slate-50 border-b border-slate-200 flex items-center justify-center text-center px-2 text-[11px] text-slate-400 leading-snug">
                       Photo is stored on the device that captured it
                     </div>
                   )}
@@ -483,7 +527,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
 
         {/* Teacher Acknowledgement */}
         {record.teacherAcknowledgement && record.teacherAcknowledgement.status !== 'Pending' && (
-          <div className="mb-8">
+          <div id="rep-response" className="mb-8 scroll-mt-40">
             <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3 pb-1 border-b border-slate-200">
               Teacher Acknowledgement &amp; Response
             </h3>
@@ -513,29 +557,32 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
 
         {/* Structured Lesson Activities & Observation Timeline */}
         {record.activities && record.activities.length > 0 && (
-          <div className="mb-8">
-            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3 pb-1 border-b border-slate-200 flex items-center justify-between">
+          <div id="rep-timeline" className="mb-8 scroll-mt-40">
+            <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3 pb-1 border-b border-slate-200 flex items-center justify-between gap-2">
               <span>Observed Lesson Activities Timeline ({record.activities.length} Phases Recorded)</span>
-              <span className="text-[10px] text-slate-500 font-normal">Framework 2 Evidence Verification</span>
+              <span className="flex items-center gap-2">
+                <span className="text-[11px] text-slate-500 font-normal hidden sm:inline">Framework 2 Evidence Verification</span>
+                <FoldToggle open={timelineOpen} onToggle={() => setShowTimeline((v) => !v)} hidden={forceOpen} />
+              </span>
             </h3>
 
-            <div className="space-y-2.5 text-xs">
+            <div className={`space-y-2.5 text-xs ${timelineOpen ? '' : 'hidden print:block'}`}>
               {record.activities.map((act, index) => (
                 <div key={act.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200">
                   <div className="flex items-center justify-between gap-2 mb-1.5">
                     <div className="flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-md bg-teal-100 text-teal-800 font-mono font-bold text-[10px] flex items-center justify-center">
+                      <span className="w-5 h-5 rounded-md bg-teal-100 text-teal-800 font-mono font-bold text-[11px] flex items-center justify-center">
                         {index + 1}
                       </span>
                       <strong className="text-slate-900 text-xs">{act.name}</strong>
                       {act.modality && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-white text-slate-600 border border-slate-200">
+                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-white text-slate-600 border border-slate-200">
                           {act.modality}
                         </span>
                       )}
                     </div>
                     {(act.timeRange || act.durationMinutes) && (
-                      <span className="text-[10px] text-slate-500 font-mono">
+                      <span className="text-[11px] text-slate-500 font-mono">
                         {act.timeRange || `${act.durationMinutes} mins`}
                       </span>
                     )}
@@ -562,7 +609,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
         )}
 
         {/* Glow / Grow / Go Protocol Action Plan */}
-        <div className="mb-8">
+        <div id="rep-debrief" className="mb-8 scroll-mt-40">
           <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3 pb-1 border-b border-slate-200">
             Post-Observation Debriefing &amp; Glow / Grow / Go Protocol
           </h3>
@@ -649,12 +696,24 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
         </div>
 
         {/* Itemized Indicator Score Matrix */}
-        <div className="mb-8">
-          <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3 pb-1 border-b border-slate-200">
-            Itemized Framework 2 Observation Indicators
+        <div id="rep-indicators" className="mb-8 scroll-mt-40">
+          <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3 pb-1 border-b border-slate-200 flex items-center justify-between gap-2">
+            <span>Itemized Framework 2 Observation Indicators</span>
+            <FoldToggle open={indicatorsOpen} onToggle={() => setShowIndicators((v) => !v)} hidden={forceOpen} />
           </h3>
 
-          <div className="space-y-4">
+          {!indicatorsOpen && (
+            <button
+              type="button"
+              onClick={() => setShowIndicators(true)}
+              className="w-full p-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 text-xs text-slate-600 transition cursor-pointer print:hidden"
+            >
+              {items.length} indicators across {Object.keys(domainGroups).length} domains · {ratedCount} rated
+              <span className="font-semibold text-indigo-700"> — show every indicator and its descriptor</span>
+            </button>
+          )}
+
+          <div className={`space-y-4 ${indicatorsOpen ? '' : 'hidden print:block'}`}>
             {Object.entries(domainGroups).map(([domainName, domainItems]) => (
               <div key={domainName} className="border border-slate-200 rounded-xl overflow-hidden text-xs">
                 <div className="bg-slate-100 px-4 py-2 font-bold text-slate-800 flex items-center justify-between">
@@ -697,7 +756,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
                           >
                             {sc || '—'}
                           </div>
-                          <span className="text-[9px] text-slate-500 block mt-0.5">
+                          <span className="text-[11px] text-slate-500 block mt-0.5">
                             {sc === 4 ? 'Distinguished' : sc === 3 ? 'Proficient' : sc === 2 ? 'Basic' : sc === 1 ? 'Unsat' : 'Unrated'}
                           </span>
                         </div>
@@ -711,7 +770,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
         </div>
 
         {/* Level Progression Evaluation */}
-        <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs mb-8">
+        <div id="rep-signoff" className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs mb-8 scroll-mt-40">
           <h4 className="font-bold text-slate-900 uppercase tracking-wider mb-1.5 flex items-center gap-2">
             <Award className="w-4 h-4 text-amber-600" />
             Career Level Progression Readiness &amp; Status
@@ -741,7 +800,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
         </div>
 
         {/* Report Footer */}
-        <div className="mt-8 pt-4 border-t border-slate-200 flex items-center justify-between text-[10px] text-slate-500">
+        <div className="mt-8 pt-4 border-t border-slate-200 flex items-center justify-between text-[11px] text-slate-500">
           <span>Eduversal © 2026 • Confidential – For Official School &amp; Academic Hub Use Only</span>
           <span>Generated via Eduversal Teacher Appraisal Platform • Permendikbud &amp; Cambridge Aligned</span>
         </div>
@@ -749,3 +808,19 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
     </div>
   );
 };
+
+/** Show/hide control for a long section. Never printed or captured in the PDF. */
+function FoldToggle({ open, onToggle, hidden }: { open: boolean; onToggle: () => void; hidden?: boolean }) {
+  if (hidden) return null;
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={open}
+      className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold normal-case tracking-normal text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition cursor-pointer print:hidden"
+    >
+      {open ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+      {open ? 'Hide' : 'Show'}
+    </button>
+  );
+}

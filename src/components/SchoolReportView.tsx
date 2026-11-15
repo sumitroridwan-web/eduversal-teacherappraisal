@@ -1,5 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Download, FileType2, AlertTriangle, FileText, Star } from 'lucide-react';
+import { Download, FileType2, AlertTriangle, FileText, Star, ImageOff, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ReportJumpBar, JumpLink } from './ReportJumpBar';
+import { StatBox } from './StatBox';
+import { ActiveFilterChips, FilterChip } from './ActiveFilterChips';
+import { useSharedFilter } from '../services/sharedFilters';
+import { useScrollSpy, scrollToSection } from '../hooks/useScrollSpy';
 import {
   TeacherAppraisalRecord,
   ACADEMIC_YEARS,
@@ -12,12 +17,13 @@ import { useLanguage } from '../i18n/LanguageContext';
 import {
   ALL,
   SchoolReportFilters,
-  ReportStatTone,
   buildSchoolReport,
   buildReportFilename,
   generateSchoolReportDoc,
   generateSchoolReportPdf,
   loadLogoDataUrl,
+  shrinkPhotosForExport,
+  PHOTO_NOT_ON_DEVICE,
 } from '../services/schoolReport';
 
 interface SchoolReportViewProps {
@@ -45,14 +51,6 @@ const SUBJECT_CATEGORIES = [
 
 const CAREER_LEVELS = ['Induction', 'Developing', 'Proficient', 'Lead', 'EarlyYears'];
 
-const STAT_TONES: Record<ReportStatTone, { box: string; value: string }> = {
-  teal: { box: 'bg-teal-50/60 border-teal-200', value: 'text-[#165963]' },
-  emerald: { box: 'bg-emerald-50/60 border-emerald-200', value: 'text-emerald-700' },
-  indigo: { box: 'bg-indigo-50/60 border-indigo-200', value: 'text-indigo-700' },
-  amber: { box: 'bg-amber-50/60 border-amber-200', value: 'text-amber-700' },
-  rose: { box: 'bg-rose-50/60 border-rose-200', value: 'text-rose-700' },
-  slate: { box: 'bg-slate-50 border-slate-200', value: 'text-slate-900' },
-};
 
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
@@ -67,14 +65,20 @@ function downloadBlob(blob: Blob, filename: string) {
 
 export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }) => {
   const { t } = useLanguage();
-  const [filters, setFilters] = useState<SchoolReportFilters>({
+  // School, level and subject carry over to and from the Overview; the rest
+  // belong to this report.
+  const [school, setSchool] = useSharedFilter('school');
+  const [schoolLevel, setSchoolLevel] = useSharedFilter('schoolLevel');
+  const [subjectCategory, setSubjectCategory] = useSharedFilter('subjectCategory');
+  const [ownFilters, setOwnFilters] = useState({
     academicYear: currentAcademicYear(),
-    school: ALL,
-    schoolLevel: ALL,
-    subjectCategory: ALL,
     careerLevel: ALL,
     appraiser: ALL,
   });
+  const filters: SchoolReportFilters = useMemo(
+    () => ({ ...ownFilters, school, schoolLevel, subjectCategory }),
+    [ownFilters, school, schoolLevel, subjectCategory]
+  );
   const [logo, setLogo] = useState<string | null>(null);
 
   // Fetched once so both exports can embed it without re-reading the asset.
@@ -90,21 +94,91 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
 
   const report = useMemo(() => buildSchoolReport(appraisals, filters), [appraisals, filters]);
 
-  const set = (patch: Partial<SchoolReportFilters>) =>
-    setFilters((prev) => ({ ...prev, ...patch }));
-
-  const handlePdf = () => {
-    generateSchoolReportPdf(report, logo).save(buildReportFilename(report, 'pdf'));
+  const set = (patch: Partial<SchoolReportFilters>) => {
+    if (patch.school !== undefined) setSchool(patch.school);
+    if (patch.schoolLevel !== undefined) setSchoolLevel(patch.schoolLevel);
+    if (patch.subjectCategory !== undefined) setSubjectCategory(patch.subjectCategory);
+    const { school: _s, schoolLevel: _l, subjectCategory: _c, ...own } = patch;
+    if (Object.keys(own).length) setOwnFilters((prev) => ({ ...prev, ...own }));
   };
 
-  const handleDoc = () => {
-    downloadBlob(generateSchoolReportDoc(report, logo), buildReportFilename(report, 'doc'));
+  const defaultYear = currentAcademicYear();
+  const filterChips: FilterChip[] = [
+    ...(filters.academicYear !== defaultYear
+      ? [{
+          key: 'y',
+          label: filters.academicYear === ALL ? 'All years' : `AY ${filters.academicYear}`,
+          onRemove: () => set({ academicYear: defaultYear }),
+        }]
+      : []),
+    ...(filters.school !== ALL ? [{ key: 's', label: filters.school, onRemove: () => set({ school: ALL }) }] : []),
+    ...(filters.schoolLevel !== ALL
+      ? [{ key: 'l', label: filters.schoolLevel, onRemove: () => set({ schoolLevel: ALL }) }]
+      : []),
+    ...(filters.subjectCategory !== ALL
+      ? [{ key: 'c', label: filters.subjectCategory, onRemove: () => set({ subjectCategory: ALL }) }]
+      : []),
+    ...(filters.appraiser !== ALL
+      ? [{ key: 'a', label: filters.appraiser, onRemove: () => set({ appraiser: ALL }) }]
+      : []),
+    ...(filters.careerLevel !== ALL
+      ? [{ key: 'k', label: `${filters.careerLevel} level`, onRemove: () => set({ careerLevel: ALL }) }]
+      : []),
+  ];
+  const clearFilters = () =>
+    set({ academicYear: defaultYear, school: ALL, schoolLevel: ALL, subjectCategory: ALL, appraiser: ALL, careerLevel: ALL });
+
+  // Photos are scaled down before they go into a download, so preparing a
+  // report with many of them takes a moment.
+  const [exporting, setExporting] = useState<'pdf' | 'doc' | null>(null);
+
+  const handlePdf = async () => {
+    setExporting('pdf');
+    try {
+      const data = await shrinkPhotosForExport(report);
+      generateSchoolReportPdf(data, logo).save(buildReportFilename(report, 'pdf'));
+    } finally {
+      setExporting(null);
+    }
+  };
+
+  const handleDoc = async () => {
+    setExporting('doc');
+    try {
+      const data = await shrinkPhotosForExport(report);
+      downloadBlob(generateSchoolReportDoc(data, logo), buildReportFilename(report, 'doc'));
+    } finally {
+      setExporting(null);
+    }
   };
 
   const selectClass =
     'w-full p-2 text-xs bg-white border border-slate-200 rounded-lg text-slate-900 outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 cursor-pointer';
 
   const empty = report.totalObservations === 0;
+
+  const jumpLinks: JumpLink[] = empty
+    ? []
+    : [
+        { id: 'sr-glance', label: 'At a glance' },
+        { id: 'sr-summary', label: 'Summary' },
+        { id: 'sr-domains', label: 'Domains' },
+        { id: 'sr-observations', label: `Observations (${report.totalObservations})` },
+        ...(report.priorityImprovements.length ? [{ id: 'sr-priorities', label: 'Priorities' }] : []),
+        ...(report.bestPractices.length
+          ? [{ id: 'sr-practices', label: `Best practices (${report.bestPractices.length})` }]
+          : []),
+      ];
+  const activeSection = useScrollSpy(jumpLinks.map((l) => l.id));
+
+  // Moving between teachers: the one on screen, and the ones either side of it.
+  const observationIds = report.observations.map((_, i) => `sr-obs-${i}`);
+  const activeObservationId = useScrollSpy(observationIds, 160);
+  const currentObservation = activeObservationId ? observationIds.indexOf(activeObservationId) : -1;
+  const goToObservation = (index: number) => {
+    if (index < 0 || index >= observationIds.length) return;
+    scrollToSection(observationIds[index]);
+  };
   const generatedOn = new Date(report.generatedAt).toLocaleDateString('en-GB', {
     day: '2-digit',
     month: 'short',
@@ -134,19 +208,23 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
             <button
               type="button"
               onClick={handleDoc}
-              disabled={empty}
+              disabled={empty || exporting !== null}
               className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 text-xs font-semibold rounded-xl border border-slate-200 transition cursor-pointer shadow-2xs"
             >
-              <FileType2 className="w-4 h-4 text-indigo-600" />
+              {exporting === 'doc' ? (
+                <Loader2 className="w-4 h-4 text-indigo-600 animate-spin" />
+              ) : (
+                <FileType2 className="w-4 h-4 text-indigo-600" />
+              )}
               {t('action.downloadWord')}
             </button>
             <button
               type="button"
               onClick={handlePdf}
-              disabled={empty}
+              disabled={empty || exporting !== null}
               className="flex items-center gap-2 px-5 py-2.5 bg-[#165963] hover:bg-[#11474f] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-sm"
             >
-              <Download className="w-4 h-4" />
+              {exporting === 'pdf' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
               {t('action.downloadPdf')}
             </button>
           </div>
@@ -255,7 +333,61 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
             </select>
           </div>
         </div>
+
+        <ActiveFilterChips
+          chips={filterChips}
+          onClearAll={clearFilters}
+          summary={`${report.totalObservations} observation${report.totalObservations === 1 ? '' : 's'} in scope`}
+          className="mt-4 pt-4 border-t border-slate-100"
+        />
       </div>
+
+      {!empty && (
+        <ReportJumpBar
+          links={jumpLinks}
+          activeId={activeSection}
+          trailing={
+            <>
+              <label htmlFor="sr-teacher-jump" className="sr-only">
+                Go to a teacher
+              </label>
+              <select
+                id="sr-teacher-jump"
+                value={currentObservation >= 0 ? String(currentObservation) : ''}
+                onChange={(e) => goToObservation(Number(e.target.value))}
+                className="max-w-[14rem] p-2 text-xs bg-white border border-slate-200 rounded-lg text-slate-900 cursor-pointer"
+              >
+                <option value="" disabled>
+                  Go to teacher…
+                </option>
+                {report.observations.map((o, i) => (
+                  <option key={i} value={i}>
+                    {i + 1}. {o.teacherName} — {o.subject}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => goToObservation(currentObservation <= 0 ? 0 : currentObservation - 1)}
+                disabled={currentObservation <= 0}
+                aria-label="Previous teacher"
+                className="p-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => goToObservation(currentObservation + 1)}
+                disabled={currentObservation >= observationIds.length - 1}
+                aria-label="Next teacher"
+                className="p-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </>
+          }
+        />
+      )}
 
       {/* Document preview - mirrors the exported file */}
       <div className="bg-white text-slate-900 p-5 sm:p-8 lg:p-10 rounded-2xl shadow-xl border border-slate-200 max-w-4xl mx-auto">
@@ -290,27 +422,19 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
         ) : (
           <>
             {/* Results at a glance - the same boxes the PDF and Word file carry */}
-            <section className="mb-7">
+            <section id="sr-glance" className="mb-7 scroll-mt-40">
               <h2 className="text-xs font-bold text-[#165963] uppercase tracking-wider pb-1 border-b border-slate-200 mb-3">
                 {t('report.atAGlance')}
               </h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 {report.statBoxes.map((s) => (
-                  <div key={s.label} className={`rounded-xl border p-4 min-w-0 ${STAT_TONES[s.tone].box}`}>
-                    <div className="text-xs font-bold text-slate-600 uppercase tracking-wide">{s.label}</div>
-                    <div
-                      className={`text-3xl sm:text-4xl font-extrabold font-mono leading-tight mt-1 ${STAT_TONES[s.tone].value}`}
-                    >
-                      {s.value}
-                    </div>
-                    <p className="text-sm text-slate-600 leading-snug mt-1">{s.insight}</p>
-                  </div>
+                  <StatBox key={s.label} tone={s.tone} label={s.label} value={s.value} detail={s.insight} size="md" />
                 ))}
               </div>
             </section>
 
             {/* Executive summary */}
-            <section className="mb-7">
+            <section id="sr-summary" className="mb-7 scroll-mt-40">
               <h2 className="text-xs font-bold text-[#165963] uppercase tracking-wider pb-1 border-b border-slate-200 mb-3">
                 {t('report.execSummary')}
               </h2>
@@ -344,7 +468,7 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
             </section>
 
             {/* Domain attainment */}
-            <section className="mb-7">
+            <section id="sr-domains" className="mb-7 scroll-mt-40">
               <h2 className="text-xs font-bold text-[#165963] uppercase tracking-wider pb-1 border-b border-slate-200 mb-3">
                 {t('report.domainAttainment')}
               </h2>
@@ -369,13 +493,13 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
             </section>
 
             {/* Key observations */}
-            <section className="mb-7">
+            <section id="sr-observations" className="mb-7 scroll-mt-40">
               <h2 className="text-xs font-bold text-[#165963] uppercase tracking-wider pb-1 border-b border-slate-200 mb-3">
                 {t('report.keyObservations')}
               </h2>
               <div className="space-y-4">
                 {report.observations.map((o, i) => (
-                  <div key={i} className="pb-3 border-b border-slate-100 last:border-0">
+                  <div key={i} id={`sr-obs-${i}`} className="pb-3 border-b border-slate-100 last:border-0 scroll-mt-40">
                     <div className="flex flex-wrap items-baseline justify-between gap-2">
                       <h3 className="text-sm font-bold text-slate-900">
                         {i + 1}. {o.teacherName} — {o.subject}
@@ -419,7 +543,7 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
                             }`}
                           >
                             <div
-                              className={`text-[10px] font-bold uppercase tracking-wider ${
+                              className={`text-[11px] font-bold uppercase tracking-wider ${
                                 tone === 'emerald'
                                   ? 'text-emerald-800'
                                   : tone === 'amber'
@@ -447,7 +571,7 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
 
             {/* Cohort priorities */}
             {report.priorityImprovements.length > 0 && (
-              <section className="mb-7">
+              <section id="sr-priorities" className="mb-7 scroll-mt-40">
                 <h2 className="text-xs font-bold text-[#165963] uppercase tracking-wider pb-1 border-b border-slate-200 mb-3">
                   {t('report.cohortPriorities')}
                 </h2>
@@ -466,33 +590,42 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
 
             {/* Best practices */}
             {report.bestPractices.length > 0 && (
-              <section>
+              <section id="sr-practices" className="scroll-mt-40">
                 <h2 className="text-xs font-bold text-[#165963] uppercase tracking-wider pb-1 border-b border-slate-200 mb-3">
                   {t('report.bestPractices')}
                 </h2>
                 <p className="text-xs text-slate-500 mb-3">
-                  Practice flagged during observation as worth sharing across the department,
-                  shown with the evidence photographed at the time.
+                  {report.bestPractices.length} photo{report.bestPractices.length === 1 ? '' : 's'}{' '}
+                  flagged during observation as practice worth sharing across the department.
                 </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {report.bestPractices.map((b, i) => (
                     <figure
                       key={i}
-                      className="border border-amber-200 bg-amber-50/50 rounded-xl overflow-hidden flex gap-3"
+                      className="border border-amber-200 bg-amber-50/40 rounded-xl overflow-hidden break-inside-avoid"
                     >
-                      {b.dataUrl && (
+                      {b.dataUrl ? (
                         <img
                           src={b.dataUrl}
-                          alt={b.caption}
-                          className="w-24 h-24 object-cover shrink-0"
+                          alt={b.caption || `Best practice photo from ${b.teacherName}`}
+                          className="w-full h-56 object-cover bg-slate-100"
                         />
+                      ) : (
+                        <div className="w-full h-56 bg-slate-100 flex flex-col items-center justify-center gap-2 px-6 text-center">
+                          <ImageOff className="w-6 h-6 text-slate-400" />
+                          <p className="text-xs text-slate-500">{PHOTO_NOT_ON_DEVICE}</p>
+                        </div>
                       )}
-                      <figcaption className="py-2 pr-2 min-w-0">
-                        <span className="flex items-center gap-1 text-[11px] font-bold text-amber-800">
-                          <Star className="w-3 h-3 text-amber-500 shrink-0" />
-                          {b.teacherName}
+                      <figcaption className="p-3">
+                        <span className="flex items-center gap-1 text-xs font-bold text-amber-800">
+                          <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400 shrink-0" />
+                          {b.teacherName} — {b.subject}
                         </span>
-                        <p className="text-xs text-slate-700 mt-0.5">{b.caption}</p>
+                        {b.caption ? (
+                          <p className="text-sm text-slate-700 mt-1">{b.caption}</p>
+                        ) : (
+                          <p className="text-xs text-slate-400 italic mt-1">No caption added.</p>
+                        )}
                       </figcaption>
                     </figure>
                   ))}
@@ -502,7 +635,7 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
           </>
         )}
 
-        <p className="text-[10px] text-slate-400 mt-8 pt-3 border-t border-slate-100">
+        <p className="text-[11px] text-slate-400 mt-8 pt-3 border-t border-slate-100">
           Eduversal Academic Quality Assurance Directorate • Framework 2
         </p>
       </div>

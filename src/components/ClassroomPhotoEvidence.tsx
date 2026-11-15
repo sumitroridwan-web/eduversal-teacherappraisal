@@ -286,7 +286,7 @@ export const ClassroomPhotoEvidence: React.FC<ClassroomPhotoEvidenceProps> = ({
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
-                  <span className="absolute top-1.5 left-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-900/70 text-white">
+                  <span className="absolute top-1.5 left-1.5 text-[11px] font-semibold px-1.5 py-0.5 rounded bg-slate-900/70 text-white">
                     {photo.source}
                   </span>
                 </div>

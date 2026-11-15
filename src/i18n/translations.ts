@@ -36,6 +36,8 @@ export const TRANSLATIONS = {
     'nav.mobile.report': 'Report',
     'nav.mobile.walkthrough': 'Walk',
     'nav.mobile.rubrics': 'Rubrics',
+    'nav.group.work': 'Observe',
+    'nav.group.insights': 'Insights',
 
     // Access gate
     'gate.title': 'Teacher Appraisal Platform',
@@ -186,6 +188,8 @@ export const TRANSLATIONS = {
     'nav.mobile.report': 'Laporan',
     'nav.mobile.walkthrough': 'Kunjungan',
     'nav.mobile.rubrics': 'Rubrik',
+    'nav.group.work': 'Observasi',
+    'nav.group.insights': 'Wawasan',
 
     // Gerbang akses
     'gate.title': 'Platform Penilaian Guru',

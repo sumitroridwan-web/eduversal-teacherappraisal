@@ -599,7 +599,7 @@ export const WalkthroughView: React.FC = () => {
                         <span
                           key={ind.id}
                           title={`${ind.id} ${ind.title}`}
-                          className={`w-6 h-6 rounded text-[10px] font-bold flex items-center justify-center border ${
+                          className={`w-6 h-6 rounded text-[11px] font-bold flex items-center justify-center border ${
                             v === 'E'
                               ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                               : v === 'D'
@@ -902,7 +902,7 @@ export const WalkthroughView: React.FC = () => {
               </>
             )}
 
-            <p className="text-[10px] text-slate-400 mt-8 pt-3 border-t border-slate-100">
+            <p className="text-[11px] text-slate-400 mt-8 pt-3 border-t border-slate-100">
               Educamp • Development of Teaching Proficiency, Eduversal
             </p>
           </div>

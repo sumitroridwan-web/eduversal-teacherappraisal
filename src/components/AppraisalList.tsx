@@ -16,10 +16,16 @@ import {
   BookOpen,
   School,
   CalendarPlus,
+  Users,
+  TrendingUp,
+  CheckCircle2,
+  PenSquare,
 } from 'lucide-react';
+import { StatBox } from './StatBox';
+import { ActiveFilterChips, FilterChip } from './ActiveFilterChips';
 import { TeacherAppraisalRecord, CareerLevel, SchoolLevel, SubjectCategory, EDUVERSAL_SCHOOLS } from '../types';
 import { routeToHash, NEW_OBSERVATION } from '../services/routing';
-import { calculateF2Scores } from '../data/frameworkRubrics';
+import { calculateF2Scores, calculateF2Predicate } from '../data/frameworkRubrics';
 
 interface AppraisalListProps {
   appraisals: TeacherAppraisalRecord[];
@@ -59,6 +65,32 @@ export const AppraisalList: React.FC<AppraisalListProps> = ({
 
     return matchesSchool && matchesLevel && matchesStatus && matchesSearch;
   });
+
+  // Headline figures for what is listed below. The average counts graded
+  // observations only, as everywhere else in the platform.
+  const graded = filteredAppraisals
+    .map((a) => calculateF2Scores(a.careerLevel, a.scores))
+    .filter((st) => !st.provisional);
+  const averagePct = graded.length
+    ? Math.round((graded.reduce((sum, st) => sum + st.percentage, 0) / graded.length) * 10) / 10
+    : 0;
+  const teacherCount = new Set(filteredAppraisals.map((a) => a.teacherName.trim().toLowerCase()).filter(Boolean)).size;
+  const finalisedCount = filteredAppraisals.filter((a) => a.status === 'Finalized (Conference Complete)').length;
+  const inProgressCount = filteredAppraisals.length - finalisedCount;
+  const draftCount = filteredAppraisals.filter((a) => a.status === 'Draft').length;
+
+  const filterChips: FilterChip[] = [
+    ...(searchQuery ? [{ key: 'q', label: `“${searchQuery}”`, onRemove: () => setSearchQuery('') }] : []),
+    ...(filterSchool !== 'All' ? [{ key: 's', label: filterSchool, onRemove: () => setFilterSchool('All') }] : []),
+    ...(filterLevel !== 'All' ? [{ key: 'l', label: `${filterLevel} level`, onRemove: () => setFilterLevel('All') }] : []),
+    ...(filterStatus !== 'All' ? [{ key: 't', label: filterStatus, onRemove: () => setFilterStatus('All') }] : []),
+  ];
+  const clearFilters = () => {
+    setSearchQuery('');
+    setFilterSchool('All');
+    setFilterLevel('All');
+    setFilterStatus('All');
+  };
 
   return (
     <div className="space-y-6 text-slate-800">
@@ -151,6 +183,45 @@ export const AppraisalList: React.FC<AppraisalListProps> = ({
             </select>
           </div>
         </div>
+
+        <ActiveFilterChips
+          chips={filterChips}
+          onClearAll={clearFilters}
+          summary={`Showing ${filteredAppraisals.length} of ${appraisals.length}`}
+          className="mt-4 pt-4 border-t border-slate-100"
+        />
+      </div>
+
+      {/* Headline strip */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <StatBox
+          tone="indigo"
+          icon={Users}
+          label="Observations"
+          value={filteredAppraisals.length}
+          detail={`${teacherCount} ${teacherCount === 1 ? 'teacher' : 'teachers'}`}
+        />
+        <StatBox
+          tone="emerald"
+          icon={TrendingUp}
+          label="Average score"
+          value={graded.length ? `${averagePct}%` : '—'}
+          detail={graded.length ? `${calculateF2Predicate(averagePct).predicate}, across ${graded.length} graded` : 'No graded observations yet'}
+        />
+        <StatBox
+          tone="teal"
+          icon={CheckCircle2}
+          label="Finalised"
+          value={finalisedCount}
+          detail="Conference complete"
+        />
+        <StatBox
+          tone={inProgressCount ? 'amber' : 'slate'}
+          icon={PenSquare}
+          label="In progress"
+          value={inProgressCount}
+          detail={`${draftCount} in draft, ${inProgressCount - draftCount} saved awaiting conference`}
+        />
       </div>
 
       {/* Cards Grid */}
@@ -168,10 +239,10 @@ export const AppraisalList: React.FC<AppraisalListProps> = ({
                 <div className="flex items-start justify-between gap-3 mb-3">
                   <div className="flex-1">
                     <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                      <span className="text-[10px] font-bold text-teal-700 uppercase tracking-wider bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200">
+                      <span className="text-[11px] font-bold text-teal-700 uppercase tracking-wider bg-teal-50 px-2 py-0.5 rounded-md border border-teal-200">
                         {appraisal.schoolName || 'Eduversal School'}
                       </span>
-                      <span className="text-[10px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">
+                      <span className="text-[11px] font-semibold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">
                         {appraisal.schoolLevel}
                       </span>
                     </div>
@@ -194,7 +265,7 @@ export const AppraisalList: React.FC<AppraisalListProps> = ({
                     }
                     className={`w-11 h-11 rounded-xl flex items-center justify-center font-black border shrink-0 shadow-2xs ${
                       s.provisional
-                        ? 'bg-slate-50 text-slate-400 border-slate-200 text-[9px] uppercase tracking-wider leading-tight'
+                        ? 'bg-slate-50 text-slate-400 border-slate-200 text-[11px] uppercase tracking-wider leading-tight'
                         : s.grade === 'A'
                         ? 'bg-emerald-50 text-emerald-600 border-emerald-200 text-lg'
                         : s.grade === 'B'
@@ -212,21 +283,21 @@ export const AppraisalList: React.FC<AppraisalListProps> = ({
 
                 {/* Lesson Topic & Objectives Preview */}
                 <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 text-xs mb-4">
-                  <span className="text-slate-400 block text-[10px] uppercase font-semibold">Lesson Unit / Topic:</span>
+                  <span className="text-slate-400 block text-[11px] uppercase font-semibold">Lesson Unit / Topic:</span>
                   <p className="text-slate-800 line-clamp-1 font-medium">{appraisal.lessonTopic || 'General Observation'}</p>
                 </div>
 
                 {/* Score & Progress Stats */}
                 <div className="grid grid-cols-2 gap-2 text-xs mb-4">
                   <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200/70">
-                    <span className="text-[10px] text-slate-500 block">F2 Raw Score</span>
+                    <span className="text-[11px] text-slate-500 block">F2 Raw Score</span>
                     <span className="font-mono font-bold text-indigo-600 text-sm">
                       {s.totalRaw}/{s.maxTotal} ({s.percentage}%)
                     </span>
                   </div>
 
                   <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200/70">
-                    <span className="text-[10px] text-slate-500 block">Career Level</span>
+                    <span className="text-[11px] text-slate-500 block">Career Level</span>
                     <span className="font-semibold text-amber-600">{appraisal.careerLevel}</span>
                   </div>
                 </div>
@@ -240,7 +311,7 @@ export const AppraisalList: React.FC<AppraisalListProps> = ({
 
                   <div className="flex items-center gap-2">
                     {appraisal.aiAnalysis && (
-                      <span className="flex items-center gap-1 text-[10px] text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100 font-medium">
+                      <span className="flex items-center gap-1 text-[11px] text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100 font-medium">
                         <Sparkles className="w-3 h-3 text-amber-500" />
                         AI Analyzed
                       </span>

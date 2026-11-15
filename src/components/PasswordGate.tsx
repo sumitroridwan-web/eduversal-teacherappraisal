@@ -244,7 +244,7 @@ export const PasswordGate: React.FC<PasswordGateProps> = ({ children }) => {
         <p className="text-center text-[11px] text-slate-400 mt-5">
           {t('gate.authorised')}
         </p>
-        <p className="text-center text-[10px] text-slate-300 mt-1 font-mono">
+        <p className="text-center text-[11px] text-slate-300 mt-1 font-mono">
           build {__BUILD_ID__}
         </p>
       </div>

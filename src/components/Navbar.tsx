@@ -65,80 +65,71 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <span>EDUVERSAL</span>
                     <span className="text-slate-400 font-normal text-[11px] sm:text-xs hidden xs:inline">| F2 Appraisal</span>
                   </h1>
-                  <span className="text-[9px] sm:text-[10px] font-bold px-1.5 py-0.2 rounded bg-teal-50 text-teal-700 border border-teal-200 shrink-0">
+                  <span className="text-[11px] sm:text-[11px] font-bold px-1.5 py-0.2 rounded bg-teal-50 text-teal-700 border border-teal-200 shrink-0">
                     v2.1
                   </span>
                 </div>
-                <p className="text-[10px] sm:text-[11px] text-slate-500 leading-none truncate hidden sm:block">
+                <p className="text-[11px] sm:text-[11px] text-slate-500 leading-none truncate hidden sm:block">
                   {t('nav.tagline')}
                 </p>
               </div>
             </a>
 
             {/* Desktop / Tablet Navigation Links */}
-            <nav className="hidden md:flex items-center gap-1 bg-slate-100/90 p-1 rounded-xl border border-slate-200 text-xs">
+            {/* Tablet only: on wider screens these move to the sidebar. */}
+            <nav className="hidden md:flex lg:hidden items-center gap-1 bg-slate-100/90 p-1 rounded-xl border border-slate-200 text-xs">
               <a
-                id="nav-btn-list"
                 href={routeToHash({ view: 'LIST' })}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-medium transition cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition cursor-pointer ${
                   currentView === 'LIST'
                     ? 'bg-indigo-600 text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                 }`}
               >
-                <FileSpreadsheet className="w-3.5 h-3.5" />
-                <span>{t('nav.portfolio')}</span>
+                <span>{t('nav.mobile.portfolio')}</span>
               </a>
 
               <a
-                id="nav-btn-form"
                 href={routeToHash({ view: 'FORM', appraisalId: activeAppraisalId })}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-medium transition cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition cursor-pointer ${
                   currentView === 'FORM' || currentView === 'REPORT'
                     ? 'bg-indigo-600 text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                 }`}
               >
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                <span>{t('nav.activeSheet')}</span>
+                <span>{t('nav.mobile.observe')}</span>
               </a>
 
               <a
-                id="nav-btn-analytics"
                 href={routeToHash({ view: 'ANALYTICS' })}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-medium transition cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition cursor-pointer ${
                   currentView === 'ANALYTICS'
                     ? 'bg-indigo-600 text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                 }`}
               >
-                <BarChart3 className="w-3.5 h-3.5" />
-                <span>{t('nav.overview')}</span>
+                <span>{t('nav.mobile.analytics')}</span>
               </a>
 
               <a
-                id="nav-btn-school-report"
                 href={routeToHash({ view: 'SCHOOL_REPORT' })}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-medium transition cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition cursor-pointer ${
                   currentView === 'SCHOOL_REPORT'
                     ? 'bg-indigo-600 text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                 }`}
               >
-                <FileText className="w-3.5 h-3.5" />
                 <span>{t('nav.schoolReport')}</span>
               </a>
 
               <a
-                id="nav-btn-walkthrough"
                 href={routeToHash({ view: 'WALKTHROUGH' })}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg font-medium transition cursor-pointer ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition cursor-pointer ${
                   currentView === 'WALKTHROUGH'
                     ? 'bg-indigo-600 text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                 }`}
               >
-                <ClipboardCheck className="w-3.5 h-3.5" />
                 <span>{t('nav.walkthrough')}</span>
               </a>
             </nav>
@@ -153,7 +144,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 title="Official Framework 2 Rubrics Handbook & Descriptors"
               >
                 <BookOpen className="w-3.5 h-3.5 text-indigo-600" />
-                <span className="hidden sm:inline">{t('nav.rubrics')}</span>
+                <span className="hidden sm:inline md:hidden lg:inline">{t('nav.rubrics')}</span>
               </button>
 
               <a
@@ -206,7 +197,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <div className="hidden lg:flex items-center gap-2.5 border-l pl-3 border-slate-200">
                 <div className="text-right leading-tight">
                   <p className="text-xs font-semibold text-slate-800">{t('nav.appraiser')}</p>
-                  <p className="text-[10px] text-slate-400 font-medium">EDUVERSAL</p>
+                  <p className="text-[11px] text-slate-400 font-medium">EDUVERSAL</p>
                 </div>
                 <div className="w-8 h-8 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center font-bold text-xs border border-indigo-200">
                   QA
@@ -217,8 +208,64 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
       </header>
 
+      {/* Sidebar on wide screens, in two groups: the work of observing, and
+          what the observations add up to. Compact icons up to 1536px, with
+          labels beside them above that. */}
+      <aside className="hidden lg:flex flex-col fixed left-0 top-16 bottom-0 z-20 w-24 2xl:w-60 bg-white border-r border-slate-200 py-4 overflow-y-auto print:hidden">
+        <SidebarGroup label={t('nav.group.work')} />
+        <SidebarLink
+          id="nav-btn-list"
+          href={routeToHash({ view: 'LIST' })}
+          active={currentView === 'LIST'}
+          icon={FileSpreadsheet}
+          short={t('nav.mobile.portfolio')}
+          full={t('nav.portfolio')}
+        />
+        <SidebarLink
+          id="nav-btn-form"
+          href={routeToHash({ view: 'FORM', appraisalId: activeAppraisalId })}
+          active={currentView === 'FORM' || currentView === 'REPORT'}
+          icon={ShieldCheck}
+          short={t('nav.mobile.observe')}
+          full={t('nav.activeSheet')}
+        />
+        <SidebarLink
+          href={routeToHash({ view: 'FORM', appraisalId: NEW_OBSERVATION })}
+          active={false}
+          icon={Plus}
+          short={t('nav.newShort')}
+          full={t('nav.new')}
+        />
+        <SidebarLink
+          id="nav-btn-walkthrough"
+          href={routeToHash({ view: 'WALKTHROUGH' })}
+          active={currentView === 'WALKTHROUGH'}
+          icon={ClipboardCheck}
+          short={t('nav.walkthrough')}
+          full={t('nav.walkthrough')}
+        />
+
+        <SidebarGroup label={t('nav.group.insights')} />
+        <SidebarLink
+          id="nav-btn-analytics"
+          href={routeToHash({ view: 'ANALYTICS' })}
+          active={currentView === 'ANALYTICS'}
+          icon={BarChart3}
+          short={t('nav.mobile.analytics')}
+          full={t('nav.overview')}
+        />
+        <SidebarLink
+          id="nav-btn-school-report"
+          href={routeToHash({ view: 'SCHOOL_REPORT' })}
+          active={currentView === 'SCHOOL_REPORT'}
+          icon={FileText}
+          short={t('nav.schoolReport')}
+          full={t('nav.schoolReport')}
+        />
+      </aside>
+
       {/* Mobile Bottom Floating Navigation Bar */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 px-2 py-1.5 shadow-lg flex items-center justify-around text-[10px] print:hidden">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200 px-2 py-1.5 shadow-lg flex items-center justify-around text-[11px] print:hidden">
         <a
           href={routeToHash({ view: 'LIST' })}
           className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl font-medium transition cursor-pointer min-h-[44px] min-w-[60px] ${
@@ -292,3 +339,44 @@ export const Navbar: React.FC<NavbarProps> = ({
   );
 };
 
+
+function SidebarGroup({ label }: { label: string }) {
+  return (
+    <div className="px-3 pt-3 pb-1 first:pt-0">
+      <p className="hidden 2xl:block px-3 text-[11px] font-bold uppercase tracking-wider text-slate-400">{label}</p>
+      <p className="2xl:hidden text-center text-[11px] font-bold uppercase tracking-wide text-slate-400">{label}</p>
+    </div>
+  );
+}
+
+function SidebarLink({
+  id,
+  href,
+  active,
+  icon: Icon,
+  short,
+  full,
+}: {
+  id?: string;
+  href: string;
+  active: boolean;
+  icon: React.ComponentType<{ className?: string }>;
+  short: string;
+  full: string;
+}) {
+  return (
+    <a
+      id={id}
+      href={href}
+      title={full}
+      aria-current={active ? 'page' : undefined}
+      className={`mx-2 my-0.5 flex flex-col 2xl:flex-row items-center gap-1 2xl:gap-3 px-2 2xl:px-3 py-2.5 rounded-xl transition cursor-pointer ${
+        active ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+      }`}
+    >
+      <Icon className="w-5 h-5 shrink-0" />
+      <span className="2xl:hidden text-xs font-semibold text-center leading-tight">{short}</span>
+      <span className="hidden 2xl:inline text-sm font-semibold">{full}</span>
+    </a>
+  );
+}
