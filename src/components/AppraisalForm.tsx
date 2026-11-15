@@ -29,6 +29,9 @@ import {
   Timer,
   PenSquare,
   ListChecks,
+  ListTree,
+  Pencil,
+  X,
 } from 'lucide-react';
 import {
   TeacherAppraisalRecord,
@@ -60,6 +63,7 @@ import { AiAnalysisModal } from './AiAnalysisModal';
 import { LessonActivitiesManager } from './LessonActivitiesManager';
 import { ClassroomPhotoEvidence } from './ClassroomPhotoEvidence';
 import { AutoGradeModal } from './AutoGradeModal';
+import { SheetSectionRail } from './SheetSectionRail';
 import { executeAutoGrade } from '../services/autoGrader';
 import { saveOrUpdateAppraisal } from '../services/storage';
 import { useLanguage } from '../i18n/LanguageContext';
@@ -71,6 +75,9 @@ import {
   clockTime,
   appendEvidenceStem,
   coverageProgress,
+  buildSheetSteps,
+  missingDetails,
+  SheetStepKey,
 } from '../services/observationSheet';
 import {
   generateGlowGrowGo,
@@ -703,8 +710,138 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
     }
   };
 
+  /* ---------------- Section rail ---------------- */
+
+  const sheetSteps = buildSheetSteps(record, currentItems, COVERAGE_FLOOR);
+  const detailsMissing = missingDetails(record);
+
+  // Details fold away once complete, so a returning appraiser lands on the work
+  // rather than on eleven fields already filled in. A new sheet opens with
+  // them showing.
+  const [detailsCollapsed, setDetailsCollapsed] = useState<boolean>(
+    () => !isUnsaved && missingDetails(initialRecord).length === 0
+  );
+  const [spyKey, setSpyKey] = useState<SheetStepKey | null>(null);
+  const [pendingScroll, setPendingScroll] = useState<{ id: string } | null>(null);
+  const [pendingNextUnrated, setPendingNextUnrated] = useState(false);
+  const [showSections, setShowSections] = useState(false);
+
+  // Another observation opened in the same sheet starts from its own state.
+  useEffect(() => {
+    setDetailsCollapsed(!isUnsaved && missingDetails(initialRecord).length === 0);
+  }, [initialRecord.id]);
+
+  /**
+   * Takes the appraiser to a part of the sheet. Capture and rating are
+   * separate surfaces, so the right one is switched on first and the scroll
+   * waits until it has rendered.
+   */
+  const navigateTo = (key: SheetStepKey) => {
+    setShowSections(false);
+    let target: string;
+    if (key === 'details') {
+      setDetailsCollapsed(false);
+      target = 'details';
+    } else if (key.startsWith('capture')) {
+      setMode('CAPTURE');
+      target = key === 'capture' ? 'capture-notes' : key;
+    } else if (key.startsWith('rate')) {
+      setMode('RATE');
+      const section = key.split('-')[1] as 'A' | 'B' | 'C' | undefined;
+      setActiveSection(section || 'ALL');
+      target = 'rate';
+    } else {
+      setMode('RATE');
+      setActiveSection('FEEDBACK');
+      target = key;
+    }
+    setPendingScroll({ id: target });
+  };
+
+  useEffect(() => {
+    if (!pendingScroll) return;
+    const frame = requestAnimationFrame(() => {
+      document
+        .getElementById(`sheet-${pendingScroll.id}`)
+        ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    setPendingScroll(null);
+    return () => cancelAnimationFrame(frame);
+  }, [pendingScroll]);
+
+  const railNextUnrated = () => {
+    setShowSections(false);
+    if (mode !== 'RATE') {
+      setMode('RATE');
+      setPendingNextUnrated(true);
+    } else {
+      goToNextUnrated();
+    }
+  };
+
+  useEffect(() => {
+    if (!pendingNextUnrated || mode !== 'RATE') return;
+    setPendingNextUnrated(false);
+    goToNextUnrated();
+  }, [pendingNextUnrated, mode]);
+
+  // Highlights the part of the sheet being read: of the marked sections in the
+  // upper half of the screen, the one that starts highest.
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') return;
+    const visible = new Set<HTMLElement>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) =>
+          entry.isIntersecting
+            ? visible.add(entry.target as HTMLElement)
+            : visible.delete(entry.target as HTMLElement)
+        );
+        let best: HTMLElement | null = null;
+        visible.forEach((el) => {
+          if (!best || el.getBoundingClientRect().top < best.getBoundingClientRect().top) best = el;
+        });
+        if (best) setSpyKey((best as HTMLElement).dataset.sheetStep as SheetStepKey);
+      },
+      { rootMargin: '-90px 0px -55% 0px' }
+    );
+    document.querySelectorAll<HTMLElement>('[data-sheet-step]').forEach((el) => observer.observe(el));
+    return () => observer.disconnect();
+  }, [mode, activeSection, detailsCollapsed]);
+
+  const activeStepKey: SheetStepKey | null =
+    spyKey === 'rate' && (activeSection === 'A' || activeSection === 'B' || activeSection === 'C')
+      ? (`rate-${activeSection}` as SheetStepKey)
+      : spyKey;
+
+  const rail = (
+    <SheetSectionRail
+      steps={sheetSteps}
+      activeKey={activeStepKey}
+      onNavigate={navigateTo}
+      score={{
+        provisional: stats.provisional,
+        grade: stats.grade,
+        percentage: stats.percentage,
+        rated: stats.itemsScored,
+        total: stats.totalItems,
+        needed: progress.needed,
+        meetsFloor: progress.meetsFloor,
+      }}
+      unratedCount={unratedCount}
+      onNextUnrated={railNextUnrated}
+    />
+  );
+  const stepsDone = sheetSteps.filter((step) => step.state === 'done').length;
+
   return (
-    <div className="space-y-6">
+    <div className="xl:grid xl:grid-cols-[16rem_minmax(0,1fr)] xl:gap-6 xl:items-start">
+      {/* Section rail: a sidebar on wide screens, a pop-up from the bottom bar below that. */}
+      <aside className="hidden xl:block sticky top-20 max-h-[calc(100vh-6rem)] overflow-y-auto pb-2">
+        {rail}
+      </aside>
+
+    <div className="space-y-6 min-w-0">
       {/* Toast Alert */}
       {savedSuccessAlert && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 bg-emerald-600 text-white rounded-xl shadow-xl border border-emerald-500 animate-in fade-in slide-in-from-bottom-4">
@@ -714,7 +851,11 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
       )}
 
       {/* Top Metadata & Career Level Bar */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm text-slate-800">
+      <div
+        id="sheet-details"
+        data-sheet-step="details"
+        className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm text-slate-800 scroll-mt-24"
+      >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 sm:pb-5 mb-4 sm:mb-5 border-b border-slate-100">
           <div>
             <div className="flex items-center gap-2 text-[11px] sm:text-xs font-semibold text-indigo-600 uppercase tracking-wider mb-1">
@@ -783,6 +924,35 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
           </div>
         </div>
 
+        {detailsCollapsed ? (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <p className="text-sm text-slate-700 leading-relaxed min-w-0">
+              <strong className="text-slate-900">{record.subject || record.subjectCategory}</strong>
+              {record.gradeClass && <> · {record.gradeClass}</>}
+              {' · '}
+              {record.schoolName}
+              {' · '}
+              {record.observationDate}
+              {record.timeIn && record.timeOut && <> · {record.timeIn}–{record.timeOut}</>}
+              {' · '}
+              {record.careerLevel === 'EarlyYears' ? 'Early Years' : record.careerLevel} level
+              {' · '}
+              Appraiser: {record.appraiserName}
+              {record.lessonTopic && (
+                <span className="block text-slate-500">Topic: {record.lessonTopic}</span>
+              )}
+            </p>
+            <button
+              type="button"
+              onClick={() => setDetailsCollapsed(false)}
+              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold rounded-xl border border-slate-200 transition cursor-pointer shrink-0"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              Edit details
+            </button>
+          </div>
+        ) : (
+        <>
         {/* Metadata Inputs Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
           {/* School Name */}
@@ -1014,6 +1184,26 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
             />
           </div>
         </div>
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mt-4 pt-4 border-t border-slate-100">
+          <p className={`text-xs ${detailsMissing.length ? 'text-amber-700' : 'text-emerald-700'} font-medium`}>
+            {detailsMissing.length
+              ? `Still needed: ${detailsMissing.join(', ')}`
+              : 'All lesson details are filled in.'}
+          </p>
+          {detailsMissing.length === 0 && (
+            <button
+              type="button"
+              onClick={() => setDetailsCollapsed(true)}
+              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xs font-semibold rounded-xl border border-emerald-200 transition cursor-pointer"
+            >
+              <Check className="w-3.5 h-3.5" />
+              Done — fold details away
+            </button>
+          )}
+        </div>
+        </>
+        )}
       </div>
 
       {/* Capture / Rate switch. The two halves of an observation are different
@@ -1066,7 +1256,11 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
       {mode === 'CAPTURE' && (
       <>
       {/* Appraiser's Own Lesson Notes & Score-From-Notes Action */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm text-slate-800 space-y-4">
+      <div
+        id="sheet-capture-notes"
+        data-sheet-step="capture-notes"
+        className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm text-slate-800 space-y-4 scroll-mt-24"
+      >
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 pb-4 border-b border-slate-100">
           <div className="flex items-start gap-3">
             <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0 mt-0.5">
@@ -1164,13 +1358,16 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
       </div>
 
       {/* Structured Lesson Activities & Observation Timeline */}
-      <LessonActivitiesManager
-        activities={record.activities || []}
-        onChange={(activities) => setRecord((prev) => ({ ...prev, activities }))}
-        onTriggerAutoGrade={handleTriggerAutoGrade}
-      />
+      <div id="sheet-capture-timeline" data-sheet-step="capture-timeline" className="scroll-mt-24">
+        <LessonActivitiesManager
+          activities={record.activities || []}
+          onChange={(activities) => setRecord((prev) => ({ ...prev, activities }))}
+          onTriggerAutoGrade={handleTriggerAutoGrade}
+        />
+      </div>
 
       {/* Live Audio Recorder & AI Analyzer Widget */}
+      <div id="sheet-capture-audio" data-sheet-step="capture-audio" className="scroll-mt-24">
       <AudioLessonRecorder
         // Keyed by record so opening another teacher's observation reseeds the
         // recorder with that teacher's notes instead of carrying one over.
@@ -1224,13 +1421,16 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
           setShowAiModal(true);
         }}
       />
+      </div>
 
       {/* Classroom Photo Evidence & Best Practices */}
-      <ClassroomPhotoEvidence
-        appraisalId={record.id}
-        photos={record.photos || []}
-        onChange={(photos) => setRecord((prev) => ({ ...prev, photos }))}
-      />
+      <div id="sheet-capture-photos" data-sheet-step="capture-photos" className="scroll-mt-24">
+        <ClassroomPhotoEvidence
+          appraisalId={record.id}
+          photos={record.photos || []}
+          onChange={(photos) => setRecord((prev) => ({ ...prev, photos }))}
+        />
+      </div>
 
       </>
       )}
@@ -1238,7 +1438,11 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
       {mode === 'RATE' && (
       <>
       {/* Live F2 Score Summary Card */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm text-slate-800">
+      <div
+        id="sheet-rate"
+        data-sheet-step="rate"
+        className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm text-slate-800 scroll-mt-24"
+      >
         <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
           {/* Subtotals breakdown grid */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 flex-1">
@@ -1502,7 +1706,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
 
       {/* Observation Items Sheet */}
       {activeSection !== 'FEEDBACK' ? (
-        <div className="space-y-4">
+        <div className="space-y-4" data-sheet-step="rate">
           {/* Keyboard rating. Twenty-seven ratings by trackpad is the bulk of
               the work, and the keys let an appraiser keep their eyes up. */}
           <div className="flex items-center gap-2 text-[11px] text-slate-500 px-1">
@@ -1826,7 +2030,11 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
         </div>
       ) : (
         /* Glow / Grow / Go Protocol Tab */
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6 text-slate-800">
+        <div
+          id="sheet-debrief"
+          data-sheet-step="debrief"
+          className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm space-y-6 text-slate-800 scroll-mt-24"
+        >
           <div className="border-b border-slate-100 pb-4">
             <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
               {t('ggg.title')}
@@ -2055,7 +2263,11 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
             {/* Teacher acknowledgement and right of reply. An appraisal that
                 feeds progression decisions should record that the teacher saw
                 it and had the chance to respond. */}
-            <div className="border border-slate-200 rounded-2xl p-4 bg-slate-50">
+            <div
+              id="sheet-finalise"
+              data-sheet-step="finalise"
+              className="border border-slate-200 rounded-2xl p-4 bg-slate-50 scroll-mt-24"
+            >
               <label className="block text-xs font-semibold text-slate-700 uppercase tracking-wider mb-1.5">
                 Teacher Acknowledgement &amp; Right of Reply
               </label>
@@ -2158,7 +2370,34 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
 
       {/* Floating Bottom Action Bar */}
       <div className="sticky bottom-4 z-40 bg-white/95 backdrop-blur-md border border-slate-200 rounded-2xl p-4 shadow-xl flex flex-wrap items-center justify-between gap-4 text-slate-800">
+        {/* Below the wide-screen breakpoint the section rail opens from here. */}
+        {showSections && (
+          <div className="xl:hidden absolute bottom-full left-0 right-0 mb-2 max-h-[70vh] overflow-y-auto rounded-2xl bg-slate-50 border border-slate-200 shadow-2xl p-2">
+            <div className="flex items-center justify-between px-2 pb-2">
+              <span className="text-sm font-bold text-slate-900">Sheet sections</span>
+              <button
+                type="button"
+                onClick={() => setShowSections(false)}
+                aria-label="Close sections"
+                className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-500 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            {rail}
+          </div>
+        )}
+
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <button
+            type="button"
+            onClick={() => setShowSections((prev) => !prev)}
+            aria-expanded={showSections}
+            className="xl:hidden flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold bg-slate-900 hover:bg-slate-800 text-white transition cursor-pointer"
+          >
+            <ListTree className="w-4 h-4" />
+            Sections {stepsDone}/{sheetSteps.length}
+          </button>
           <div className="text-xs">
             <span className="text-slate-500">{t('sheet.attainment')}: </span>
             <strong className="text-indigo-600 font-mono text-sm">
@@ -2276,6 +2515,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
         careerLevel={record.careerLevel}
         onApplyAll={handleApplyAllAutoGrade}
       />
+    </div>
     </div>
   );
 };

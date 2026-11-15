@@ -205,3 +205,20 @@ describe('every career level renders', () => {
     });
   });
 });
+
+describe('section rail', () => {
+  test('lists the sheet sections with their progress', () => {
+    const html = render(withRatings(5));
+    for (const label of ['Lesson details', 'Capture', 'Rate indicators', 'Debrief', 'Acknowledge &amp; finalise']) {
+      assert.ok(html.includes(label), `missing ${label}`);
+    }
+    assert.ok(html.includes('5/44 rated'), 'the rail counts the ratings');
+    assert.ok(/Sections \d\/5/.test(html), 'smaller screens open the rail from the bottom bar');
+  });
+
+  test('a new sheet shows its details rather than folding them away', () => {
+    const html = render(createBlankAppraisal());
+    assert.ok(html.includes('input-teacher-name'));
+    assert.ok(html.includes('Still needed:'));
+  });
+});
