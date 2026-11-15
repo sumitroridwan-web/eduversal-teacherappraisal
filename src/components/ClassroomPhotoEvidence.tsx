@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { LessonPhoto } from '../types';
 import { putMedia, deleteMedia, dataUrlToBlob } from '../services/mediaStore';
+import { uploadPhoto, deleteRemotePhoto } from '../services/mediaSync';
 
 interface ClassroomPhotoEvidenceProps {
   photos: LessonPhoto[];
@@ -84,7 +85,10 @@ export const ClassroomPhotoEvidence: React.FC<ClassroomPhotoEvidenceProps> = ({
     const blob = dataUrlToBlob(dataUrl);
     if (!blob) return undefined;
     try {
-      return await putMedia({ appraisalId, kind: 'photo', blob });
+      const id = await putMedia({ appraisalId, kind: 'photo', blob });
+      // Also to the server, so the photo shows on the appraiser's other devices.
+      void uploadPhoto(id, appraisalId, dataUrl);
+      return id;
     } catch (e) {
       console.warn('Snapshot could not be stored on this device', e);
       setError(
@@ -179,7 +183,10 @@ export const ClassroomPhotoEvidence: React.FC<ClassroomPhotoEvidenceProps> = ({
     // The record stops referring to it either way; leaving the bytes behind
     // would fill the device with snapshots nothing can reach.
     const dropped = photos.find((p) => p.id === id);
-    if (dropped?.blobId) void deleteMedia(dropped.blobId);
+    if (dropped?.blobId) {
+      void deleteMedia(dropped.blobId);
+      void deleteRemotePhoto(dropped.blobId);
+    }
     onChange(photos.filter((p) => p.id !== id));
   };
 
@@ -195,8 +202,8 @@ export const ClassroomPhotoEvidence: React.FC<ClassroomPhotoEvidenceProps> = ({
           </h3>
           <p className="text-xs text-slate-500 mt-0.5">
             Capture the room or upload photos, caption them, and flag the ones worth sharing
-            as best practice. Every photo appears in the observation report and is kept
-            on this device, not uploaded with the record.
+            as best practice. Every photo appears in the observation report, and is saved
+            with the observation so it shows on any device signed in to the platform.
           </p>
         </div>
 
@@ -272,11 +279,24 @@ export const ClassroomPhotoEvidence: React.FC<ClassroomPhotoEvidenceProps> = ({
                 }`}
               >
                 <div className="relative">
-                  <img
-                    src={photo.dataUrl}
-                    alt={photo.caption || 'Classroom evidence'}
-                    className="w-full h-36 object-cover"
-                  />
+                  {photo.dataUrl ? (
+                    <img
+                      src={photo.dataUrl}
+                      alt={photo.caption || 'Classroom evidence'}
+                      className="w-full h-44 object-cover"
+                    />
+                  ) : (
+                    // Fetched from the device store or the server when the
+                    // observation opens; until then, or if neither has it, say so
+                    // rather than show a broken image.
+                    <div className="w-full h-44 bg-slate-100 flex flex-col items-center justify-center gap-1.5 px-4 text-center">
+                      <ImageIcon className="w-6 h-6 text-slate-400" />
+                      <p className="text-xs text-slate-500">
+                        Loading photo… If it does not appear, it has not yet been synced from the
+                        device that took it.
+                      </p>
+                    </div>
+                  )}
                   <button
                     type="button"
                     onClick={() => remove(photo.id)}

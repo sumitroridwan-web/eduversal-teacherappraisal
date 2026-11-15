@@ -254,7 +254,15 @@ function languageDirective(language: unknown): string {
 const SYNC_COLLECTIONS: Record<string, string> = {
   appraisals: "appraisals",
   walkthroughs: "walkthroughs",
+  // Classroom photos, one document each, so an observation opened on another
+  // device can show the images and not just references to them. Kept apart
+  // from the observation so a dozen photos never push it past Firestore's
+  // 1 MB document limit.
+  media: "media",
 };
+
+/** Collections read one document at a time, never listed wholesale. */
+const FETCH_BY_ID_ONLY = new Set(["media"]);
 
 function resolveCollection(req: Request, res: Response): string | null {
   const collection = SYNC_COLLECTIONS[String(req.params.collection)];
@@ -285,11 +293,28 @@ app.get("/api/sync/diagnostics", requireAuth, (req, res) => {
 app.get("/api/sync/:collection", requireAuth, async (req, res) => {
   const collection = resolveCollection(req, res);
   if (!collection) return;
+  // Listing every photo would send the whole image library on each pull.
+  if (FETCH_BY_ID_ONLY.has(collection)) {
+    return res.status(400).json({ error: "Fetch this collection one item at a time." });
+  }
   try {
     const records = await listRecords(collection);
     res.json({ records: records.map((r) => r.payload), count: records.length });
   } catch (error: any) {
     console.error("Sync list failed:", error);
+    res.status(502).json({ error: error?.message || "Could not read from Firestore." });
+  }
+});
+
+app.get("/api/sync/:collection/:id", requireAuth, async (req, res) => {
+  const collection = resolveCollection(req, res);
+  if (!collection) return;
+  try {
+    const found = await getRecord(collection, String(req.params.id));
+    if (!found) return res.status(404).json({ error: "Not found." });
+    res.json({ record: found.payload, updatedAt: found.updatedAt });
+  } catch (error: any) {
+    console.error("Sync read failed:", error);
     res.status(502).json({ error: error?.message || "Could not read from Firestore." });
   }
 });

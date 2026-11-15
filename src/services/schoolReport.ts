@@ -73,7 +73,7 @@ export interface BestPracticePhoto {
 
 /** What the report says in place of a photo this device does not hold. */
 export const PHOTO_NOT_ON_DEVICE =
-  'Photo is stored on the device that captured it. Open this report there to include the image.';
+  'Photo not available yet. It has not been synced from the device that took it; opening the observation on that device uploads it.';
 
 export type ReportStatTone = 'teal' | 'emerald' | 'indigo' | 'amber' | 'rose' | 'slate';
 

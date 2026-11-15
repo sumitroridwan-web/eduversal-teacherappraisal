@@ -502,7 +502,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ record, onBack }) => {
                     />
                   ) : (
                     <div className="w-full h-32 bg-slate-50 border-b border-slate-200 flex items-center justify-center text-center px-2 text-[11px] text-slate-400 leading-snug">
-                      Photo is stored on the device that captured it
+                      Photo not synced yet from the device that took it
                     </div>
                   )}
                   {photo.isBestPractice && (
