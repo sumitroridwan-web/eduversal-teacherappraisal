@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Download, FileType2, AlertTriangle, FileText, Star } from 'lucide-react';
+import { Download, FileType2, AlertTriangle, FileText, Star, ImageOff, Loader2 } from 'lucide-react';
 import {
   TeacherAppraisalRecord,
   ACADEMIC_YEARS,
@@ -18,6 +18,8 @@ import {
   generateSchoolReportDoc,
   generateSchoolReportPdf,
   loadLogoDataUrl,
+  shrinkPhotosForExport,
+  PHOTO_NOT_ON_DEVICE,
 } from '../services/schoolReport';
 
 interface SchoolReportViewProps {
@@ -93,12 +95,28 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
   const set = (patch: Partial<SchoolReportFilters>) =>
     setFilters((prev) => ({ ...prev, ...patch }));
 
-  const handlePdf = () => {
-    generateSchoolReportPdf(report, logo).save(buildReportFilename(report, 'pdf'));
+  // Photos are scaled down before they go into a download, so preparing a
+  // report with many of them takes a moment.
+  const [exporting, setExporting] = useState<'pdf' | 'doc' | null>(null);
+
+  const handlePdf = async () => {
+    setExporting('pdf');
+    try {
+      const data = await shrinkPhotosForExport(report);
+      generateSchoolReportPdf(data, logo).save(buildReportFilename(report, 'pdf'));
+    } finally {
+      setExporting(null);
+    }
   };
 
-  const handleDoc = () => {
-    downloadBlob(generateSchoolReportDoc(report, logo), buildReportFilename(report, 'doc'));
+  const handleDoc = async () => {
+    setExporting('doc');
+    try {
+      const data = await shrinkPhotosForExport(report);
+      downloadBlob(generateSchoolReportDoc(data, logo), buildReportFilename(report, 'doc'));
+    } finally {
+      setExporting(null);
+    }
   };
 
   const selectClass =
@@ -134,19 +152,23 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
             <button
               type="button"
               onClick={handleDoc}
-              disabled={empty}
+              disabled={empty || exporting !== null}
               className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 text-xs font-semibold rounded-xl border border-slate-200 transition cursor-pointer shadow-2xs"
             >
-              <FileType2 className="w-4 h-4 text-indigo-600" />
+              {exporting === 'doc' ? (
+                <Loader2 className="w-4 h-4 text-indigo-600 animate-spin" />
+              ) : (
+                <FileType2 className="w-4 h-4 text-indigo-600" />
+              )}
               {t('action.downloadWord')}
             </button>
             <button
               type="button"
               onClick={handlePdf}
-              disabled={empty}
+              disabled={empty || exporting !== null}
               className="flex items-center gap-2 px-5 py-2.5 bg-[#165963] hover:bg-[#11474f] disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-sm"
             >
-              <Download className="w-4 h-4" />
+              {exporting === 'pdf' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
               {t('action.downloadPdf')}
             </button>
           </div>
@@ -471,28 +493,37 @@ export const SchoolReportView: React.FC<SchoolReportViewProps> = ({ appraisals }
                   {t('report.bestPractices')}
                 </h2>
                 <p className="text-xs text-slate-500 mb-3">
-                  Practice flagged during observation as worth sharing across the department,
-                  shown with the evidence photographed at the time.
+                  {report.bestPractices.length} photo{report.bestPractices.length === 1 ? '' : 's'}{' '}
+                  flagged during observation as practice worth sharing across the department.
                 </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {report.bestPractices.map((b, i) => (
                     <figure
                       key={i}
-                      className="border border-amber-200 bg-amber-50/50 rounded-xl overflow-hidden flex gap-3"
+                      className="border border-amber-200 bg-amber-50/40 rounded-xl overflow-hidden break-inside-avoid"
                     >
-                      {b.dataUrl && (
+                      {b.dataUrl ? (
                         <img
                           src={b.dataUrl}
-                          alt={b.caption}
-                          className="w-24 h-24 object-cover shrink-0"
+                          alt={b.caption || `Best practice photo from ${b.teacherName}`}
+                          className="w-full h-56 object-cover bg-slate-100"
                         />
+                      ) : (
+                        <div className="w-full h-56 bg-slate-100 flex flex-col items-center justify-center gap-2 px-6 text-center">
+                          <ImageOff className="w-6 h-6 text-slate-400" />
+                          <p className="text-xs text-slate-500">{PHOTO_NOT_ON_DEVICE}</p>
+                        </div>
                       )}
-                      <figcaption className="py-2 pr-2 min-w-0">
-                        <span className="flex items-center gap-1 text-[11px] font-bold text-amber-800">
-                          <Star className="w-3 h-3 text-amber-500 shrink-0" />
-                          {b.teacherName}
+                      <figcaption className="p-3">
+                        <span className="flex items-center gap-1 text-xs font-bold text-amber-800">
+                          <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-400 shrink-0" />
+                          {b.teacherName} — {b.subject}
                         </span>
-                        <p className="text-xs text-slate-700 mt-0.5">{b.caption}</p>
+                        {b.caption ? (
+                          <p className="text-sm text-slate-700 mt-1">{b.caption}</p>
+                        ) : (
+                          <p className="text-xs text-slate-400 italic mt-1">No caption added.</p>
+                        )}
                       </figcaption>
                     </figure>
                   ))}
