@@ -10,6 +10,7 @@ import {
 } from './services/storage';
 import { TeacherAppraisalRecord, CareerLevel } from './types';
 import { flushQueue, pullAndMerge, onSyncConflict, resolveConflict } from './services/sync';
+import { uploadPendingPhotos } from './services/mediaSync';
 import { carryContext } from './services/observationSheet';
 import { Route, parseRoute, routeToHash, NEW_OBSERVATION } from './services/routing';
 import { Navbar } from './components/Navbar';
@@ -44,6 +45,17 @@ export default function App() {
   // address, not from whichever happened to be first.
   useEffect(() => {
     setAppraisals(loadAppraisals());
+  }, []);
+
+  // Send up any photo this device holds that the server does not have yet, so
+  // it shows on the appraiser's other devices without each observation having
+  // to be opened here first. Runs once a little after start-up, off the
+  // critical path of the first screen.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void uploadPendingPhotos(loadAppraisals());
+    }, 3000);
+    return () => clearTimeout(timer);
   }, []);
 
   // Follow the address bar: the Back button, a bookmark and a link opened in

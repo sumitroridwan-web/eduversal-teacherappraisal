@@ -11,7 +11,13 @@ import {
 } from 'lucide-react';
 import { LessonPhoto } from '../types';
 import { putMedia, deleteMedia, dataUrlToBlob } from '../services/mediaStore';
-import { uploadPhoto, deleteRemotePhoto } from '../services/mediaSync';
+import {
+  uploadPhoto,
+  deleteRemotePhoto,
+  fetchPhoto,
+  isPhotoUploaded,
+  describeMissingPhoto,
+} from '../services/mediaSync';
 
 interface ClassroomPhotoEvidenceProps {
   photos: LessonPhoto[];
@@ -61,6 +67,54 @@ export const ClassroomPhotoEvidence: React.FC<ClassroomPhotoEvidenceProps> = ({
 }) => {
   const [cameraOpen, setCameraOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Per photo: whether the server has it, and why one could not be loaded.
+  const [syncedIds, setSyncedIds] = useState<Set<string>>(
+    () => new Set(photos.map((p) => p.blobId).filter((id): id is string => !!id && isPhotoUploaded(id)))
+  );
+  const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
+  const [missingReason, setMissingReason] = useState<Record<string, string>>({});
+
+  const setBusy = (id: string, busy: boolean) =>
+    setBusyIds((prev) => {
+      const next = new Set(prev);
+      busy ? next.add(id) : next.delete(id);
+      return next;
+    });
+
+  /** Uploads a photo held here that the server does not have yet. */
+  const syncNow = async (photo: LessonPhoto) => {
+    if (!photo.blobId || !photo.dataUrl) return;
+    setBusy(photo.id, true);
+    const ok = await uploadPhoto(photo.blobId, appraisalId, photo.dataUrl);
+    setBusy(photo.id, false);
+    if (ok) setSyncedIds((prev) => new Set(prev).add(photo.blobId!));
+    else setError('The photo could not be uploaded. Check the connection and try again.');
+  };
+
+  /** Fetches a photo this device does not hold, saying why if it cannot. */
+  const loadFromServer = async (photo: LessonPhoto) => {
+    if (!photo.blobId) return;
+    setBusy(photo.id, true);
+    const result = await fetchPhoto(photo.blobId, appraisalId);
+    setBusy(photo.id, false);
+    if (result.dataUrl) {
+      setSyncedIds((prev) => new Set(prev).add(photo.blobId!));
+      setMissingReason(({ [photo.id]: _, ...rest }) => rest);
+      onChange(photos.map((p) => (p.id === photo.id ? { ...p, dataUrl: result.dataUrl! } : p)));
+    } else {
+      setMissingReason((prev) => ({ ...prev, [photo.id]: describeMissingPhoto(result.reason) }));
+    }
+  };
+
+  // A photo still without its image a few seconds after opening is checked
+  // with the server once, so the panel can say why instead of loading forever.
+  useEffect(() => {
+    const waiting = photos.filter((p) => p.blobId && !p.dataUrl && !missingReason[p.id]);
+    if (!waiting.length) return;
+    const timer = setTimeout(() => waiting.forEach((p) => void loadFromServer(p)), 4000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photos.map((p) => `${p.id}:${p.dataUrl ? 1 : 0}`).join('|')]);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -87,7 +141,9 @@ export const ClassroomPhotoEvidence: React.FC<ClassroomPhotoEvidenceProps> = ({
     try {
       const id = await putMedia({ appraisalId, kind: 'photo', blob });
       // Also to the server, so the photo shows on the appraiser's other devices.
-      void uploadPhoto(id, appraisalId, dataUrl);
+      void uploadPhoto(id, appraisalId, dataUrl).then((ok) => {
+        if (ok) setSyncedIds((prev) => new Set(prev).add(id));
+      });
       return id;
     } catch (e) {
       console.warn('Snapshot could not be stored on this device', e);
@@ -289,13 +345,40 @@ export const ClassroomPhotoEvidence: React.FC<ClassroomPhotoEvidenceProps> = ({
                     // Fetched from the device store or the server when the
                     // observation opens; until then, or if neither has it, say so
                     // rather than show a broken image.
-                    <div className="w-full h-44 bg-slate-100 flex flex-col items-center justify-center gap-1.5 px-4 text-center">
+                    <div className="w-full h-44 bg-slate-100 flex flex-col items-center justify-center gap-2 px-4 text-center">
                       <ImageIcon className="w-6 h-6 text-slate-400" />
-                      <p className="text-xs text-slate-500">
-                        Loading photo… If it does not appear, it has not yet been synced from the
-                        device that took it.
+                      <p className="text-xs text-slate-600">
+                        {busyIds.has(photo.id)
+                          ? 'Loading photo…'
+                          : missingReason[photo.id] || 'Loading photo…'}
                       </p>
+                      {missingReason[photo.id] && !busyIds.has(photo.id) && (
+                        <button
+                          type="button"
+                          onClick={() => loadFromServer(photo)}
+                          className="px-3 py-1.5 rounded-lg bg-white border border-slate-300 text-xs font-semibold text-slate-700 hover:bg-slate-50 cursor-pointer"
+                        >
+                          Try again
+                        </button>
+                      )}
                     </div>
+                  )}
+                  {photo.dataUrl && photo.blobId && (
+                    syncedIds.has(photo.blobId) ? (
+                      <span className="absolute bottom-1.5 left-1.5 text-[11px] font-semibold px-1.5 py-0.5 rounded bg-emerald-600/90 text-white">
+                        Synced
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => syncNow(photo)}
+                        disabled={busyIds.has(photo.id)}
+                        title="This photo is only on this device. Upload it so it shows on other devices."
+                        className="absolute bottom-1.5 left-1.5 text-[11px] font-semibold px-2 py-0.5 rounded bg-amber-500 hover:bg-amber-600 text-white cursor-pointer disabled:opacity-70"
+                      >
+                        {busyIds.has(photo.id) ? 'Uploading…' : 'Only on this device · Sync now'}
+                      </button>
+                    )
                   )}
                   <button
                     type="button"

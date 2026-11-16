@@ -12,7 +12,7 @@
  * again the next time its observation is opened on the device that has it.
  */
 import { isSyncAvailable } from './sync';
-import { putMedia, dataUrlToBlob } from './mediaStore';
+import { putMedia, getMedia, blobToDataUrl, dataUrlToBlob } from './mediaStore';
 
 const UPLOADED_KEY = 'eduversal_media_uploaded_v1';
 
@@ -99,18 +99,28 @@ export async function uploadPhoto(blobId: string, appraisalId: string, dataUrl: 
   }
 }
 
+export type PhotoFetchResult =
+  | { dataUrl: string; reason?: undefined }
+  | { dataUrl: null; reason: 'not-on-server' | 'signed-out' | 'offline' | 'sync-off' | 'error' };
+
 /**
- * Fetches a photo this device does not hold. Keeps a copy on the device so it
- * opens offline next time. Resolves null when the server has none.
+ * Fetches a photo this device does not hold, keeping a copy on the device so
+ * it opens offline next time. When it cannot, says why, so the screen can
+ * tell the appraiser what to do rather than show a photo that never loads.
  */
-export async function downloadPhoto(blobId: string, appraisalId: string): Promise<string | null> {
-  if (!blobId || !(await isSyncAvailable())) return null;
+export async function fetchPhoto(blobId: string, appraisalId: string): Promise<PhotoFetchResult> {
+  if (!blobId) return { dataUrl: null, reason: 'error' };
+  if (!(await isSyncAvailable())) return { dataUrl: null, reason: 'sync-off' };
   try {
     const res = await fetch(`/api/sync/media/${encodeURIComponent(blobId)}`);
-    if (!res.ok) return null;
+    if (res.status === 404) return { dataUrl: null, reason: 'not-on-server' };
+    if (res.status === 401) return { dataUrl: null, reason: 'signed-out' };
+    if (!res.ok) return { dataUrl: null, reason: 'error' };
     const data = await res.json();
     const dataUrl: unknown = data?.record?.dataUrl;
-    if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) return null;
+    if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) {
+      return { dataUrl: null, reason: 'error' };
+    }
 
     const blob = dataUrlToBlob(dataUrl);
     if (blob) {
@@ -118,10 +128,57 @@ export async function downloadPhoto(blobId: string, appraisalId: string): Promis
         .then(() => markUploaded(blobId, true))
         .catch(() => undefined);
     }
-    return dataUrl;
+    return { dataUrl };
   } catch {
-    return null;
+    return { dataUrl: null, reason: 'offline' };
   }
+}
+
+/** fetchPhoto without the reason. */
+export async function downloadPhoto(blobId: string, appraisalId: string): Promise<string | null> {
+  return (await fetchPhoto(blobId, appraisalId)).dataUrl;
+}
+
+/** What to tell the appraiser about a photo this device could not load. */
+export function describeMissingPhoto(reason: PhotoFetchResult['reason']): string {
+  switch (reason) {
+    case 'not-on-server':
+      return 'Not uploaded yet. Open the platform on the device that took this photo to upload it.';
+    case 'signed-out':
+      return 'Sign in again to load this photo.';
+    case 'offline':
+      return 'No connection. Try again when online.';
+    case 'sync-off':
+      return 'Syncing is switched off on this server, so the photo is only on the device that took it.';
+    default:
+      return 'This photo could not be loaded. Try again.';
+  }
+}
+
+/**
+ * Uploads every photo this device holds that the server may not have yet.
+ * Run when the app opens, so photos reach other devices without each
+ * observation having to be opened first. One at a time, to stay gentle on
+ * school wifi. Resolves with how many were uploaded.
+ */
+export async function uploadPendingPhotos(
+  records: Array<{ id: string; photos?: Array<{ blobId?: string }> }>
+): Promise<number> {
+  if (!(await isSyncAvailable())) return 0;
+  let uploaded = 0;
+  for (const record of records) {
+    for (const photo of record.photos || []) {
+      if (!photo.blobId || isPhotoUploaded(photo.blobId)) continue;
+      const stored = await getMedia(photo.blobId);
+      if (!stored) continue;
+      try {
+        if (await uploadPhoto(photo.blobId, record.id, await blobToDataUrl(stored.blob))) uploaded++;
+      } catch {
+        // Tried again next time the app opens.
+      }
+    }
+  }
+  return uploaded;
 }
 
 export async function deleteRemotePhoto(blobId: string): Promise<void> {
