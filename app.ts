@@ -12,6 +12,7 @@ import {
   isFirestoreConfigured,
   listRecords,
   getRecord,
+  listIndex,
   putRecord,
   deleteRecord,
   describeConfiguration,
@@ -288,6 +289,20 @@ app.get("/api/sync/status", (req, res) => {
 // reading the secrets back out. Behind the platform password.
 app.get("/api/sync/diagnostics", requireAuth, (req, res) => {
   res.json(describeConfiguration());
+});
+
+// Which photos the server holds, and which observation each belongs to, with
+// no image data - how a device finds photos an observation no longer lists.
+app.get("/api/sync/media-index", requireAuth, async (req, res) => {
+  if (!isFirestoreConfigured()) {
+    return res.status(503).json({ error: "Sync is not configured on this server.", configured: false });
+  }
+  try {
+    res.json({ entries: await listIndex("media") });
+  } catch (error: any) {
+    console.error("Media index failed:", error);
+    res.status(502).json({ error: error?.message || "Could not read from Firestore." });
+  }
 });
 
 app.get("/api/sync/:collection", requireAuth, async (req, res) => {

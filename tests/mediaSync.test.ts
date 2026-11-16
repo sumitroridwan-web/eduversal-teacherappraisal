@@ -27,6 +27,11 @@ before(() => {
     calls.push({ method, url, body });
     const json = (status: number, data: any) => ({ ok: status < 300, status, json: async () => data });
     if (url === '/api/sync/status') return json(200, { configured: true });
+    if (url === '/api/sync/media-index') {
+      return json(200, {
+        entries: [...server.values()].map((r) => ({ id: r.id, updatedAt: 'then', appraisalId: r.indexed === false ? undefined : r.appraisalId })),
+      });
+    }
     const m = /^\/api\/sync\/media\/(.+)$/.exec(url);
     if (m) {
       const id = decodeURIComponent(m[1]);
@@ -92,5 +97,32 @@ describe('photo sync', () => {
 
     server.set('photo-4', { id: 'photo-4', dataUrl: PIXEL });
     assert.equal((await fetchPhoto('photo-4', 'rec-1')).dataUrl, PIXEL);
+  });
+
+  test('puts back a stored photo its observation no longer lists', async () => {
+    const { restoreUnlistedPhotos } = await import('../src/services/mediaSync');
+    server.set('photo-kept', { id: 'photo-kept', appraisalId: 'rec-a', dataUrl: PIXEL });
+    server.set('photo-dropped', { id: 'photo-dropped', appraisalId: 'rec-a', dataUrl: PIXEL });
+    server.set('photo-old', { id: 'photo-old', appraisalId: 'rec-b', dataUrl: PIXEL, indexed: false });
+    server.set('photo-orphan', { id: 'photo-orphan', appraisalId: 'rec-deleted', dataUrl: PIXEL });
+
+    const records: any[] = [
+      { id: 'rec-a', photos: [{ id: 'p', blobId: 'photo-kept', caption: 'Kept', source: 'Camera', capturedAt: '', isBestPractice: true }] },
+      { id: 'rec-b', photos: [] },
+    ];
+    const changed = await restoreUnlistedPhotos(records);
+    const byId = Object.fromEntries(changed.map((r) => [r.id, r]));
+
+    assert.deepEqual(byId['rec-a'].photos.map((p: any) => p.blobId), ['photo-kept', 'photo-dropped']);
+    assert.equal(byId['rec-a'].photos[0].caption, 'Kept', 'existing entries are untouched');
+    assert.deepEqual(byId['rec-b'].photos.map((p: any) => p.blobId), ['photo-old'], 'learned from the photo itself');
+    assert.ok(!changed.some((r) => r.id === 'rec-deleted'), "a deleted observation's photo is left alone");
+  });
+
+  test('changes nothing when every stored photo is already listed', async () => {
+    const { restoreUnlistedPhotos } = await import('../src/services/mediaSync');
+    server.set('photo-x', { id: 'photo-x', appraisalId: 'rec-x', dataUrl: PIXEL });
+    const records: any[] = [{ id: 'rec-x', photos: [{ id: 'p', blobId: 'photo-x', caption: '', source: 'Camera', capturedAt: '', isBestPractice: false }] }];
+    assert.equal((await restoreUnlistedPhotos(records)).length, 0);
   });
 });

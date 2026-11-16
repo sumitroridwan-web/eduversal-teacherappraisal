@@ -229,13 +229,17 @@ async function firestoreFetch(url: string, init: RequestInit = {}): Promise<any>
  * the payload.
  */
 function toDocument(record: StoredRecord) {
-  return {
-    fields: {
-      id: { stringValue: record.id },
-      updatedAt: { stringValue: record.updatedAt },
-      payload: { stringValue: JSON.stringify(record.payload) },
-    },
+  const fields: Record<string, { stringValue: string }> = {
+    id: { stringValue: record.id },
+    updatedAt: { stringValue: record.updatedAt },
+    payload: { stringValue: JSON.stringify(record.payload) },
   };
+  // A photo names the observation it belongs to in a field of its own, so the
+  // photos can be listed by observation without reading any image data.
+  if (typeof record.payload?.appraisalId === "string") {
+    fields.appraisalId = { stringValue: record.payload.appraisalId };
+  }
+  return { fields };
 }
 
 function fromDocument(doc: any): StoredRecord | null {
@@ -265,6 +269,44 @@ export async function listRecords(collection: string): Promise<StoredRecord[]> {
     (page?.documents || []).forEach((doc: any) => {
       const record = fromDocument(doc);
       if (record) results.push(record);
+    });
+    pageToken = page?.nextPageToken;
+  } while (pageToken);
+
+  return results;
+}
+
+export interface IndexEntry {
+  id: string;
+  updatedAt: string;
+  /** Absent on photos stored before the field existed. */
+  appraisalId?: string;
+}
+
+/**
+ * Lists a collection's ids, and the observation each belongs to, without
+ * reading the payloads - for photos, without downloading a single image.
+ */
+export async function listIndex(collection: string): Promise<IndexEntry[]> {
+  const results: IndexEntry[] = [];
+  let pageToken: string | undefined;
+
+  do {
+    const url = new URL(documentsUrl(collection));
+    url.searchParams.set("pageSize", "300");
+    ["id", "updatedAt", "appraisalId"].forEach((f) => url.searchParams.append("mask.fieldPaths", f));
+    if (pageToken) url.searchParams.set("pageToken", pageToken);
+
+    const page = await firestoreFetch(url.toString());
+    (page?.documents || []).forEach((doc: any) => {
+      const f = doc?.fields || {};
+      const id = f.id?.stringValue || String(doc?.name || "").split("/").pop() || "";
+      if (!id) return;
+      results.push({
+        id,
+        updatedAt: f.updatedAt?.stringValue || "",
+        appraisalId: f.appraisalId?.stringValue || undefined,
+      });
     });
     pageToken = page?.nextPageToken;
   } while (pageToken);

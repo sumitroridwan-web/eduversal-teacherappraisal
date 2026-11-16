@@ -10,7 +10,7 @@ import {
 } from './services/storage';
 import { TeacherAppraisalRecord, CareerLevel } from './types';
 import { flushQueue, pullAndMerge, onSyncConflict, resolveConflict } from './services/sync';
-import { uploadPendingPhotos } from './services/mediaSync';
+import { uploadPendingPhotos, restoreUnlistedPhotos } from './services/mediaSync';
 import { carryContext } from './services/observationSheet';
 import { Route, parseRoute, routeToHash, NEW_OBSERVATION } from './services/routing';
 import { Navbar } from './components/Navbar';
@@ -47,16 +47,7 @@ export default function App() {
     setAppraisals(loadAppraisals());
   }, []);
 
-  // Send up any photo this device holds that the server does not have yet, so
-  // it shows on the appraiser's other devices without each observation having
-  // to be opened here first. Runs once a little after start-up, off the
-  // critical path of the first screen.
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      void uploadPendingPhotos(loadAppraisals());
-    }, 3000);
-    return () => clearTimeout(timer);
-  }, []);
+
 
   // Follow the address bar: the Back button, a bookmark and a link opened in
   // a second tab all arrive here.
@@ -168,7 +159,18 @@ export default function App() {
       setLastSyncAt(new Date().toISOString());
     };
 
-    void sync();
+    // Once the device has the latest observations: send up any photo it holds
+    // that the server lacks, then put back any stored photo an observation no
+    // longer lists, so every observation shows all of its photos.
+    const restorePhotos = async () => {
+      await uploadPendingPhotos(loadAppraisals());
+      const restored = await restoreUnlistedPhotos(loadAppraisals());
+      if (cancelled || !restored.length) return;
+      restored.forEach((record) => saveOrUpdateAppraisal(record));
+      setAppraisals(loadAppraisals());
+    };
+
+    void sync().then(restorePhotos);
     const timer = setInterval(sync, 60_000);
     window.addEventListener('online', sync);
 

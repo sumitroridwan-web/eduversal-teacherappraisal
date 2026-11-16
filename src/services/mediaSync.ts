@@ -12,7 +12,8 @@
  * again the next time its observation is opened on the device that has it.
  */
 import { isSyncAvailable } from './sync';
-import { putMedia, getMedia, blobToDataUrl, dataUrlToBlob } from './mediaStore';
+import { putMedia, getMedia, blobToDataUrl, dataUrlToBlob, listMediaForAppraisal } from './mediaStore';
+import type { LessonPhoto } from '../types';
 
 const UPLOADED_KEY = 'eduversal_media_uploaded_v1';
 
@@ -190,4 +191,126 @@ export async function deleteRemotePhoto(blobId: string): Promise<void> {
   } catch {
     // Left on the server; harmless, as nothing refers to it.
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * Re-attaching photos an observation no longer lists
+ *
+ * Sync keeps the copy of an observation saved last. A device holding an
+ * older copy - from before a photo was added - can save over the newer one,
+ * and the photo drops out of the observation's list while the image itself
+ * is still on the server and on the device that took it. Every stored photo
+ * names its observation, so it can be put back.
+ * ------------------------------------------------------------------ */
+
+export interface PhotoOwner {
+  id: string;
+  appraisalId?: string;
+  capturedAt?: string;
+}
+
+/**
+ * The photos each observation is missing: stored photos whose observation
+ * exists here but does not list them. Photos of deleted observations, and
+ * ones whose observation is unknown, are left alone.
+ */
+export function findUnlistedPhotos(
+  records: Array<{ id: string; photos?: Array<{ blobId?: string }> }>,
+  stored: PhotoOwner[]
+): Map<string, PhotoOwner[]> {
+  const listed = new Set<string>();
+  records.forEach((r) => r.photos?.forEach((p) => p.blobId && listed.add(p.blobId)));
+  const known = new Set(records.map((r) => r.id));
+
+  const missing = new Map<string, PhotoOwner[]>();
+  const seen = new Set<string>();
+  stored.forEach((photo) => {
+    if (!photo.appraisalId || listed.has(photo.id) || seen.has(photo.id)) return;
+    if (!known.has(photo.appraisalId)) return;
+    seen.add(photo.id);
+    missing.set(photo.appraisalId, [...(missing.get(photo.appraisalId) || []), photo]);
+  });
+  return missing;
+}
+
+/** The photo entry an observation gets back for a re-attached image. */
+export function restoredPhotoEntry(owner: PhotoOwner): LessonPhoto {
+  return {
+    id: `photo-restored-${owner.id}`,
+    blobId: owner.id,
+    caption: '',
+    source: 'Upload',
+    capturedAt: owner.capturedAt || new Date().toISOString(),
+    isBestPractice: false,
+  };
+}
+
+async function fetchMediaIndex(): Promise<PhotoOwner[]> {
+  if (!(await isSyncAvailable())) return [];
+  try {
+    const res = await fetch('/api/sync/media-index');
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data?.entries)
+      ? data.entries.map((e: any) => ({ id: String(e.id), appraisalId: e.appraisalId, capturedAt: e.updatedAt }))
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Every photo this device or the server holds, with its observation. Server
+ * photos stored before the observation was recorded alongside them are read
+ * in full, once, to learn it.
+ */
+async function collectStoredPhotos(
+  records: Array<{ id: string; photos?: Array<{ blobId?: string }> }>
+): Promise<PhotoOwner[]> {
+  const owners: PhotoOwner[] = [];
+
+  for (const record of records) {
+    const local = await listMediaForAppraisal(record.id);
+    local
+      .filter((m) => m.kind === 'photo')
+      .forEach((m) => owners.push({ id: m.id, appraisalId: m.appraisalId, capturedAt: m.createdAt }));
+  }
+
+  const listed = new Set<string>();
+  records.forEach((r) => r.photos?.forEach((p) => p.blobId && listed.add(p.blobId)));
+
+  for (const entry of await fetchMediaIndex()) {
+    if (entry.appraisalId || listed.has(entry.id)) {
+      owners.push(entry);
+      continue;
+    }
+    try {
+      const res = await fetch(`/api/sync/media/${encodeURIComponent(entry.id)}`);
+      if (!res.ok) continue;
+      const data = await res.json();
+      const appraisalId = data?.record?.appraisalId;
+      if (typeof appraisalId === 'string') owners.push({ ...entry, appraisalId });
+    } catch {
+      // Tried again next time.
+    }
+  }
+  return owners;
+}
+
+/**
+ * Puts back every stored photo its observation has lost. Returns the
+ * observations that changed, ready to save; the caller saves them so they
+ * sync like any other edit.
+ */
+export async function restoreUnlistedPhotos<
+  T extends { id: string; photos?: LessonPhoto[] }
+>(records: T[]): Promise<T[]> {
+  const missing = findUnlistedPhotos(records, await collectStoredPhotos(records));
+  const changed: T[] = [];
+  missing.forEach((owners, appraisalId) => {
+    const record = records.find((r) => r.id === appraisalId);
+    if (!record) return;
+    changed.push({ ...record, photos: [...(record.photos || []), ...owners.map(restoredPhotoEntry)] });
+  });
+  return changed;
 }
