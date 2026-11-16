@@ -82,4 +82,15 @@ describe('photo sync', () => {
     await new Promise((r) => setTimeout(r, 20));
     assert.ok(!server.has('photo-3'));
   });
+
+  test('says why a photo could not be loaded', async () => {
+    const { fetchPhoto, describeMissingPhoto } = await import('../src/services/mediaSync');
+    const missing = await fetchPhoto('photo-nowhere', 'rec-1');
+    assert.equal(missing.dataUrl, null);
+    assert.equal(missing.reason, 'not-on-server');
+    assert.ok(/device that took this photo/.test(describeMissingPhoto(missing.reason)));
+
+    server.set('photo-4', { id: 'photo-4', dataUrl: PIXEL });
+    assert.equal((await fetchPhoto('photo-4', 'rec-1')).dataUrl, PIXEL);
+  });
 });
