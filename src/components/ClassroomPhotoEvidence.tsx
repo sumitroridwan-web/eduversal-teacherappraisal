@@ -17,6 +17,7 @@ import {
   fetchPhoto,
   isPhotoUploaded,
   describeMissingPhoto,
+  PHOTO_UPLOADED_EVENT,
 } from '../services/mediaSync';
 
 interface ClassroomPhotoEvidenceProps {
@@ -105,6 +106,30 @@ export const ClassroomPhotoEvidence: React.FC<ClassroomPhotoEvidenceProps> = ({
       setMissingReason((prev) => ({ ...prev, [photo.id]: describeMissingPhoto(result.reason) }));
     }
   };
+
+  // Badges follow uploads made anywhere - the start-up pass, the background
+  // retry, or another panel - without a reload.
+  useEffect(() => {
+    const refresh = () =>
+      setSyncedIds(
+        new Set(photos.map((p) => p.blobId).filter((id): id is string => !!id && isPhotoUploaded(id)))
+      );
+    refresh();
+    window.addEventListener(PHOTO_UPLOADED_EVENT, refresh);
+    return () => window.removeEventListener(PHOTO_UPLOADED_EVENT, refresh);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photos.map((p) => p.blobId || '').join('|')]);
+
+  // A photo that has not reached the server is retried every 20 seconds while
+  // the panel is open, so nobody has to press "Sync now".
+  useEffect(() => {
+    const timer = setInterval(() => {
+      photos
+        .filter((p) => p.blobId && p.dataUrl && !isPhotoUploaded(p.blobId))
+        .forEach((p) => void uploadPhoto(p.blobId!, appraisalId, p.dataUrl!));
+    }, 20_000);
+    return () => clearInterval(timer);
+  }, [photos, appraisalId]);
 
   // A photo still without its image a few seconds after opening is checked
   // with the server once, so the panel can say why instead of loading forever.
@@ -373,10 +398,10 @@ export const ClassroomPhotoEvidence: React.FC<ClassroomPhotoEvidenceProps> = ({
                         type="button"
                         onClick={() => syncNow(photo)}
                         disabled={busyIds.has(photo.id)}
-                        title="This photo is only on this device. Upload it so it shows on other devices."
+                        title="This photo is only on this device so far. It uploads by itself every few seconds; press to try now."
                         className="absolute bottom-1.5 left-1.5 text-[11px] font-semibold px-2 py-0.5 rounded bg-amber-500 hover:bg-amber-600 text-white cursor-pointer disabled:opacity-70"
                       >
-                        {busyIds.has(photo.id) ? 'Uploading…' : 'Only on this device · Sync now'}
+                        {busyIds.has(photo.id) ? 'Uploading…' : 'Not synced yet · Sync now'}
                       </button>
                     )
                   )}

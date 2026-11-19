@@ -47,7 +47,9 @@ const MAX_AUDIO_BASE64_LENGTH = 4_000_000;
  * ------------------------------------------------------------------ */
 
 const SESSION_COOKIE = "eduversal_session";
-const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
+// Renewed while in use (see requireAuth), so this is how long a device can sit
+// unused before it must sign in again.
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 // Signing key for session cookies. Set APP_SESSION_SECRET to keep sessions
 // valid across restarts; otherwise a fresh key is generated at boot and
@@ -146,10 +148,30 @@ function recordFailure(ip: string): void {
   }
 }
 
+function setSessionCookie(res: Response) {
+  res.cookie(SESSION_COOKIE, issueToken(), {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: SESSION_TTL_MS,
+    path: "/",
+  });
+}
+
+/** When the session runs out, or undefined if there is no valid one. */
+function sessionExpiry(req: Request): number | undefined {
+  const token = readCookie(req, SESSION_COOKIE);
+  return isValidToken(token) ? Number(token!.split(".")[0]) : undefined;
+}
+
 function requireAuth(req: Request, res: Response, next: NextFunction) {
-  if (!isAuthenticated(req)) {
+  const expiresAt = sessionExpiry(req);
+  if (expiresAt === undefined) {
     return res.status(401).json({ error: "Not authenticated." });
   }
+  // Sliding session: a device in use keeps its sign-in, so a tab left open
+  // through a long appraisal day never starts silently failing to sync.
+  if (expiresAt - Date.now() < SESSION_TTL_MS / 2) setSessionCookie(res);
   next();
 }
 
@@ -184,13 +206,7 @@ app.post("/api/auth/login", (req, res) => {
   }
 
   failedAttempts.delete(ip);
-  res.cookie(SESSION_COOKIE, issueToken(), {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    maxAge: SESSION_TTL_MS,
-    path: "/",
-  });
+  setSessionCookie(res);
   res.json({ success: true });
 });
 

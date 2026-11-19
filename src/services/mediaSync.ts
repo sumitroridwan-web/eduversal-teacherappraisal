@@ -11,7 +11,7 @@
  * Every call is best effort. A photo that could not be uploaded now is tried
  * again the next time its observation is opened on the device that has it.
  */
-import { isSyncAvailable } from './sync';
+import { isSyncAvailable, noteProblem } from './sync';
 import { putMedia, getMedia, blobToDataUrl, dataUrlToBlob, listMediaForAppraisal } from './mediaStore';
 import type { LessonPhoto } from '../types';
 
@@ -46,7 +46,11 @@ function markUploaded(blobId: string, uploaded: boolean) {
   if (uploaded) ids.add(blobId);
   else ids.delete(blobId);
   writeUploaded(ids);
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(PHOTO_UPLOADED_EVENT));
 }
+
+/** Fired when a photo's uploaded state changes, so badges update by themselves. */
+export const PHOTO_UPLOADED_EVENT = 'eduversal:photo-uploaded';
 
 /** Re-encodes an unusually large photo smaller so it fits in one document. */
 async function fitForUpload(dataUrl: string): Promise<string | null> {
@@ -94,6 +98,7 @@ export async function uploadPhoto(blobId: string, appraisalId: string, dataUrl: 
       }),
     });
     if (res.ok) markUploaded(blobId, true);
+    else if (res.status === 401) noteProblem('signed-out');
     return res.ok;
   } catch {
     return false;

@@ -93,6 +93,26 @@ function dequeue(collection: SyncCollection, id: string): void {
   writeMap(QUEUE_KEY, queue);
 }
 
+/**
+ * Why the last write did not reach the server, so the screen can say what to
+ * do instead of only "waiting". Cleared by the next successful write.
+ */
+export type SyncProblem = 'signed-out' | 'offline' | 'server' | 'conflict' | null;
+let lastProblem: SyncProblem = null;
+
+export function syncProblem(): SyncProblem {
+  return lastProblem;
+}
+
+/** Also used by photo uploads, which share the sign-in. */
+export function noteProblem(problem: SyncProblem) {
+  lastProblem = problem;
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(SYNC_CHANGED_EVENT));
+}
+
+/** Fired whenever the queue or the last problem changes. */
+export const SYNC_CHANGED_EVENT = 'eduversal:sync-changed';
+
 export function pendingWriteCount(): number {
   return Object.keys(readMap(QUEUE_KEY)).length;
 }
@@ -121,9 +141,16 @@ export async function pushRecord(
       }),
     });
 
+    if (res.status === 401) {
+      queueWrite(collection, record);
+      noteProblem('signed-out');
+      return false;
+    }
+
     if (res.status === 409) {
       const data = await res.json().catch(() => ({}));
       queueWrite(collection, record);
+      noteProblem('conflict');
       conflictListeners.forEach((listener) =>
         listener({
           collection,
@@ -144,15 +171,18 @@ export async function pushRecord(
         return false;
       }
       queueWrite(collection, record);
+      noteProblem('server');
       return false;
     }
 
     const data = await res.json();
     setBase(collection, record.id, data.updatedAt || record.updatedAt);
     dequeue(collection, record.id);
+    noteProblem(null);
     return true;
   } catch {
     queueWrite(collection, record);
+    noteProblem('offline');
     return false;
   }
 }
