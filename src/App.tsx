@@ -9,7 +9,7 @@ import {
   hydrateAllMedia,
 } from './services/storage';
 import { TeacherAppraisalRecord, CareerLevel } from './types';
-import { flushQueue, pullAndMerge, onSyncConflict, resolveConflict } from './services/sync';
+import { flushQueue, pullAndMerge, onSyncConflict, resolveConflict, pendingWriteCount } from './services/sync';
 import { uploadPendingPhotos, restoreUnlistedPhotos } from './services/mediaSync';
 import { carryContext } from './services/observationSheet';
 import { Route, parseRoute, routeToHash, NEW_OBSERVATION } from './services/routing';
@@ -170,14 +170,37 @@ export default function App() {
       setAppraisals(loadAppraisals());
     };
 
+    // Unsent changes and photos are retried every 15 seconds, and straight
+    // away when the connection returns or the appraiser comes back to the
+    // tab; the full check for other devices' work stays at once a minute.
+    let ticks = 0;
+    let running = false;
+    const retry = async (full = false) => {
+      if (running) return;
+      running = true;
+      try {
+        if (full) await sync();
+        else if (pendingWriteCount() > 0) await flushQueue();
+        await uploadPendingPhotos(loadAppraisals());
+      } finally {
+        running = false;
+      }
+    };
+    const onTick = () => void retry(++ticks % 4 === 0);
+    const onReturn = () => {
+      if (document.visibilityState === 'visible') void retry(true);
+    };
+
     void sync().then(restorePhotos);
-    const timer = setInterval(sync, 60_000);
-    window.addEventListener('online', sync);
+    const timer = setInterval(onTick, 15_000);
+    window.addEventListener('online', onReturn);
+    document.addEventListener('visibilitychange', onReturn);
 
     return () => {
       cancelled = true;
       clearInterval(timer);
-      window.removeEventListener('online', sync);
+      window.removeEventListener('online', onReturn);
+      document.removeEventListener('visibilitychange', onReturn);
     };
   }, []);
 

@@ -856,9 +856,9 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
         data-sheet-step="details"
         className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm text-slate-800 scroll-mt-24"
       >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 sm:pb-5 mb-4 sm:mb-5 border-b border-slate-100">
-          <div>
-            <div className="flex items-center gap-2 text-[11px] sm:text-xs font-semibold text-indigo-600 uppercase tracking-wider mb-1">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 sm:pb-5 mb-4 sm:mb-5 border-b border-slate-100">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] sm:text-xs font-semibold text-indigo-600 uppercase tracking-wider mb-1">
               <span>Framework 2 • Observation Sheet</span>
               <span className="text-slate-300">•</span>
               <span>Eduversal 2026</span>
@@ -880,7 +880,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
           </div>
 
           {/* Quick Action Buttons */}
-          <div className="grid grid-cols-2 sm:flex sm:items-center gap-2">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-center gap-2 shrink-0">
             <button
               id="btn-auto-grade-top"
               type="button"
@@ -1209,7 +1209,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
       {/* Capture / Rate switch. The two halves of an observation are different
           jobs done at different moments, and showing both at once is what made
           the sheet feel like forty-four things to do during the lesson. */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-2 shadow-sm flex flex-col sm:flex-row sm:items-center gap-2">
+      <div className="bg-white border border-slate-200 rounded-2xl p-2 shadow-sm flex flex-col lg:flex-row lg:items-center gap-2">
         <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200 flex-1">
           <button
             type="button"
@@ -1242,7 +1242,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
           </button>
         </div>
 
-        <p className="text-[11px] text-slate-500 px-2 sm:px-3 sm:max-w-[19rem] leading-snug">
+        <p className="text-xs text-slate-500 px-2 sm:px-3 lg:max-w-[19rem] leading-snug">
           {mode === 'CAPTURE'
             ? 'Write what you see. The rubric comes out afterwards, with these notes beside it.'
             : progress.meetsFloor
@@ -1443,41 +1443,41 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
         data-sheet-step="rate"
         className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-sm text-slate-800 scroll-mt-24"
       >
-        <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4">
           {/* Subtotals breakdown grid */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 flex-1">
             <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-              <div className="text-[11px] sm:text-[11px] text-slate-500 uppercase tracking-wider font-semibold">
+              <div className="text-[11px] text-slate-500 uppercase tracking-wide font-semibold">
                 A) Pre-Visit
               </div>
-              <div className="text-lg sm:text-xl font-bold font-mono text-slate-900 mt-0.5">
+              <div className="text-lg sm:text-xl font-bold font-mono text-slate-900 mt-0.5 whitespace-nowrap">
                 {stats.rawA} <span className="text-xs text-slate-400 font-normal">/ {stats.maxA}</span>
               </div>
             </div>
 
             <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-              <div className="text-[11px] sm:text-[11px] text-slate-500 uppercase tracking-wider font-semibold">
+              <div className="text-[11px] text-slate-500 uppercase tracking-wide font-semibold">
                 B) Live Obs
               </div>
-              <div className="text-lg sm:text-xl font-bold font-mono text-slate-900 mt-0.5">
+              <div className="text-lg sm:text-xl font-bold font-mono text-slate-900 mt-0.5 whitespace-nowrap">
                 {stats.rawB} <span className="text-xs text-slate-400 font-normal">/ {stats.maxB}</span>
               </div>
             </div>
 
             <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-              <div className="text-[11px] sm:text-[11px] text-slate-500 uppercase tracking-wider font-semibold">
+              <div className="text-[11px] text-slate-500 uppercase tracking-wide font-semibold">
                 C) Post-Lesson
               </div>
-              <div className="text-lg sm:text-xl font-bold font-mono text-slate-900 mt-0.5">
+              <div className="text-lg sm:text-xl font-bold font-mono text-slate-900 mt-0.5 whitespace-nowrap">
                 {stats.rawC} <span className="text-xs text-slate-400 font-normal">/ {stats.maxC}</span>
               </div>
             </div>
 
             <div className="bg-indigo-50/70 p-2.5 rounded-xl border border-indigo-100">
-              <div className="text-[11px] sm:text-[11px] text-indigo-700 uppercase tracking-wider font-bold">
+              <div className="text-[11px] text-indigo-700 uppercase tracking-wide font-bold">
                 Total F2 Raw
               </div>
-              <div className="text-lg sm:text-xl font-black font-mono text-indigo-700 mt-0.5">
+              <div className="text-lg sm:text-xl font-black font-mono text-indigo-700 mt-0.5 whitespace-nowrap">
                 {stats.totalRaw} <span className="text-xs text-indigo-400 font-normal">/ {stats.maxTotal}</span>
               </div>
             </div>
@@ -1486,7 +1486,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
           {/* Indicative Grade Badge. Below the coverage floor the letter is
               withheld and the scope is shown in its place - the sheet should
               never hand back a grade the observation cannot carry. */}
-          <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4 pt-3 md:pt-0 border-t md:border-t-0 md:border-l md:pl-4 border-slate-100">
+          <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4 pt-3 lg:pt-0 border-t lg:border-t-0 lg:border-l lg:pl-4 border-slate-100">
             <div className="text-left sm:text-right">
               <div className="text-xs text-slate-700 font-bold">
                 {stats.provisional ? 'Provisional Result' : 'Indicative Grade'}
@@ -1581,8 +1581,8 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
       </div>
 
       {/* Section Filter Tabs */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-2">
-        <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs overflow-x-auto no-scrollbar scroll-smooth whitespace-nowrap">
+      <div className="flex flex-col 2xl:flex-row 2xl:items-center justify-between gap-3 border-b border-slate-200 pb-2">
+        <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs min-w-0">
           <button
             type="button"
             onClick={() => setActiveSection('ALL')}
@@ -1991,7 +1991,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
                       nothing, and nothing downstream could tell that from an
                       observation. They now open a phrase the appraiser
                       finishes in their own words. */}
-                  <div className="flex sm:flex-col items-stretch gap-1.5 shrink-0">
+                  <div className="flex flex-wrap sm:flex-col items-stretch gap-1.5 sm:shrink-0">
                     <button
                       type="button"
                       onClick={() => {
@@ -2019,7 +2019,7 @@ export const AppraisalForm: React.FC<AppraisalFormProps> = ({
                         title={`Start an evidence note about ${prompt.toLowerCase()}`}
                         className="text-[11px] text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-2 py-1.5 rounded-lg border border-slate-200 transition cursor-pointer whitespace-nowrap"
                       >
-                        {prompt}…
+                        + {prompt}
                       </button>
                     ))}
                   </div>

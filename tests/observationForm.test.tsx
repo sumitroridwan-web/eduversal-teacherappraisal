@@ -178,7 +178,7 @@ describe('rate mode', () => {
 
   test('opens an evidence phrase instead of stamping a finished token', () => {
     const markup = html();
-    assert.ok(markup.includes('Engagement…'), 'the button should start a sentence');
+    assert.ok(/\+ (<!-- -->)?Engagement/.test(markup), 'the button should start a sentence');
     assert.ok(
       !markup.includes('[High Engagement]'),
       'a token that looks like evidence and states nothing must not come back'
