@@ -126,3 +126,21 @@ describe('photo sync', () => {
     assert.equal((await restoreUnlistedPhotos(records)).length, 0);
   });
 });
+
+describe('photos stored without their file type', async () => {
+  const { normalizeImageDataUrl } = await import('../src/services/mediaSync');
+  test('relabels a JPEG that came back as generic data', () => {
+    assert.equal(
+      normalizeImageDataUrl('data:application/octet-stream;base64,/9j/4AAQSkZJRg'),
+      'data:image/jpeg;base64,/9j/4AAQSkZJRg'
+    );
+  });
+  test('keeps a correctly labelled image as it is', () => {
+    const png = 'data:image/png;base64,iVBORw0KGgoAAAA';
+    assert.equal(normalizeImageDataUrl(png), png);
+  });
+  test('refuses an empty canvas result and non-images', () => {
+    assert.equal(normalizeImageDataUrl('data:,'), null);
+    assert.equal(normalizeImageDataUrl('data:text/plain;base64,aGVsbG8='), null);
+  });
+});

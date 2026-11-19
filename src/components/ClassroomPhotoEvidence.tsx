@@ -103,7 +103,7 @@ export const ClassroomPhotoEvidence: React.FC<ClassroomPhotoEvidenceProps> = ({
       setMissingReason(({ [photo.id]: _, ...rest }) => rest);
       onChange(photos.map((p) => (p.id === photo.id ? { ...p, dataUrl: result.dataUrl! } : p)));
     } else {
-      setMissingReason((prev) => ({ ...prev, [photo.id]: describeMissingPhoto(result.reason) }));
+      setMissingReason((prev) => ({ ...prev, [photo.id]: describeMissingPhoto(result.reason, result.detail) }));
     }
   };
 
@@ -191,7 +191,10 @@ export const ClassroomPhotoEvidence: React.FC<ClassroomPhotoEvidenceProps> = ({
   });
 
   const addPhoto = async (dataUrl: string, source: LessonPhoto['source']) => {
-    if (!dataUrl) return;
+    if (!dataUrl || dataUrl.length < 100) {
+      setError('That snapshot came out empty. Please take it again.');
+      return;
+    }
     if (photos.length >= MAX_PHOTOS) {
       setError(`A maximum of ${MAX_PHOTOS} photos can be attached to one observation.`);
       return;
@@ -245,7 +248,10 @@ export const ClassroomPhotoEvidence: React.FC<ClassroomPhotoEvidenceProps> = ({
       try {
         const img = await readFileAsImage(file);
         const dataUrl = compressToDataUrl(img, img.naturalWidth, img.naturalHeight);
-        if (!dataUrl) continue;
+        if (!dataUrl || dataUrl.length < 100) {
+          setError(`${file.name} could not be processed on this device. Try a smaller photo.`);
+          continue;
+        }
         added.push(buildPhoto(dataUrl, 'Upload', await storeLocally(dataUrl)));
       } catch (e: any) {
         setError(e?.message || 'One of the images could not be read.');

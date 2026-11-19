@@ -5,6 +5,7 @@ import {
   pendingWriteCount,
   flushQueue,
   syncProblem,
+  syncProblemDetail,
   SYNC_CHANGED_EVENT,
   type SyncProblem,
 } from '../services/sync';
@@ -96,7 +97,9 @@ export const SyncStatusBar: React.FC<SyncStatusBarProps> = ({ lastSyncAt }) => {
             <>
               <AlertTriangle className="w-3.5 h-3.5" />
               {pending} change{pending === 1 ? '' : 's'} waiting to sync
-              {problem === 'server' ? ' — the server did not accept it, retrying' : ' — retrying automatically'}
+              {problem === 'server'
+                ? ` — ${syncProblemDetail() || 'the server did not accept it'}. Retrying automatically.`
+                : ' — retrying automatically'}
             </>
           ) : (
             <>
