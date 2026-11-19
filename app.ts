@@ -11,6 +11,7 @@ import crypto from "crypto";
 import {
   isFirestoreConfigured,
   listRecords,
+  listRecordsSince,
   getRecord,
   listIndex,
   putRecord,
@@ -329,8 +330,13 @@ app.get("/api/sync/:collection", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "Fetch this collection one item at a time." });
   }
   try {
-    const records = await listRecords(collection);
-    res.json({ records: records.map((r) => r.payload), count: records.length });
+    // Taken before reading, so nothing written during the read is skipped.
+    const serverTime = new Date().toISOString();
+    const since = typeof req.query.since === "string" ? req.query.since : "";
+    const records = since
+      ? await listRecordsSince(collection, since)
+      : await listRecords(collection);
+    res.json({ records: records.map((r) => r.payload), count: records.length, serverTime });
   } catch (error: any) {
     console.error("Sync list failed:", error);
     res.status(502).json({ error: error?.message || "Could not read from Firestore." });

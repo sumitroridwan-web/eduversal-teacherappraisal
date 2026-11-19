@@ -11,7 +11,7 @@
  * Every call is best effort. A photo that could not be uploaded now is tried
  * again the next time its observation is opened on the device that has it.
  */
-import { isSyncAvailable, noteProblem } from './sync';
+import { isSyncAvailable, noteProblem, explainServerError } from './sync';
 import { putMedia, getMedia, blobToDataUrl, dataUrlToBlob, listMediaForAppraisal } from './mediaStore';
 import type { LessonPhoto } from '../types';
 
@@ -81,8 +81,10 @@ async function fitForUpload(dataUrl: string): Promise<string | null> {
 /** Sends one photo to the server. Resolves true once it is stored there. */
 export async function uploadPhoto(blobId: string, appraisalId: string, dataUrl: string): Promise<boolean> {
   if (!blobId || !dataUrl || !(await isSyncAvailable())) return false;
+  const image = normalizeImageDataUrl(dataUrl);
+  if (!image) return false;
   try {
-    const fitted = await fitForUpload(dataUrl);
+    const fitted = await fitForUpload(image);
     if (!fitted) return false;
     const res = await fetch(`/api/sync/media/${encodeURIComponent(blobId)}`, {
       method: 'PUT',
@@ -106,8 +108,36 @@ export async function uploadPhoto(blobId: string, appraisalId: string, dataUrl: 
 }
 
 export type PhotoFetchResult =
-  | { dataUrl: string; reason?: undefined }
-  | { dataUrl: null; reason: 'not-on-server' | 'signed-out' | 'offline' | 'sync-off' | 'error' };
+  | { dataUrl: string; reason?: undefined; detail?: undefined }
+  | {
+      dataUrl: null;
+      reason: 'not-on-server' | 'signed-out' | 'offline' | 'sync-off' | 'error';
+      /** What the server said, shown with the generic message so a failure can be traced. */
+      detail?: string;
+    };
+
+const IMAGE_SIGNATURES: Array<[string, string]> = [
+  ['/9j/', 'image/jpeg'],
+  ['iVBORw0KGgo', 'image/png'],
+  ['R0lGOD', 'image/gif'],
+  ['UklGR', 'image/webp'],
+];
+
+/**
+ * Returns a photo's data URL labelled as the image it is, or null if it holds
+ * no image. Some browsers (Safari especially) hand back stored photos without
+ * their file type, so they upload as "application/octet-stream" and would be
+ * refused on the way back although the picture itself is intact. The type is
+ * read from the image's own first bytes instead.
+ */
+export function normalizeImageDataUrl(dataUrl: string): string | null {
+  const match = /^data:([^;,]*)((?:;[^;,]*)*?)(;base64)?,(.*)$/s.exec(dataUrl || '');
+  if (!match || !match[3] || !match[4]) return null;
+  const payload = match[4];
+  if (match[1].startsWith('image/')) return dataUrl;
+  const found = IMAGE_SIGNATURES.find(([sig]) => payload.startsWith(sig));
+  return found ? `data:${found[1]};base64,${payload}` : null;
+}
 
 /**
  * Fetches a photo this device does not hold, keeping a copy on the device so
@@ -115,29 +145,41 @@ export type PhotoFetchResult =
  * tell the appraiser what to do rather than show a photo that never loads.
  */
 export async function fetchPhoto(blobId: string, appraisalId: string): Promise<PhotoFetchResult> {
-  if (!blobId) return { dataUrl: null, reason: 'error' };
+  if (!blobId) return { dataUrl: null, reason: 'error', detail: 'no photo id' };
   if (!(await isSyncAvailable())) return { dataUrl: null, reason: 'sync-off' };
+  let res: Response;
   try {
-    const res = await fetch(`/api/sync/media/${encodeURIComponent(blobId)}`);
-    if (res.status === 404) return { dataUrl: null, reason: 'not-on-server' };
-    if (res.status === 401) return { dataUrl: null, reason: 'signed-out' };
-    if (!res.ok) return { dataUrl: null, reason: 'error' };
-    const data = await res.json();
-    const dataUrl: unknown = data?.record?.dataUrl;
-    if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) {
-      return { dataUrl: null, reason: 'error' };
-    }
-
-    const blob = dataUrlToBlob(dataUrl);
-    if (blob) {
-      putMedia({ appraisalId, kind: 'photo', blob, id: blobId })
-        .then(() => markUploaded(blobId, true))
-        .catch(() => undefined);
-    }
-    return { dataUrl };
+    res = await fetch(`/api/sync/media/${encodeURIComponent(blobId)}`);
   } catch {
     return { dataUrl: null, reason: 'offline' };
   }
+  if (res.status === 404) return { dataUrl: null, reason: 'not-on-server' };
+  if (res.status === 401) {
+    noteProblem('signed-out');
+    return { dataUrl: null, reason: 'signed-out' };
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    return { dataUrl: null, reason: 'error', detail: explainServerError(`server ${res.status}${body?.error ? `: ${body.error}` : ''}`) };
+  }
+
+  const data = await res.json().catch(() => null);
+  const raw: unknown = data?.record?.dataUrl;
+  if (typeof raw !== 'string') {
+    return { dataUrl: null, reason: 'error', detail: data ? 'the stored photo has no image data' : 'unreadable reply' };
+  }
+  const dataUrl = normalizeImageDataUrl(raw);
+  if (!dataUrl) {
+    return { dataUrl: null, reason: 'error', detail: `the stored file is not an image (${raw.slice(0, 40)})` };
+  }
+
+  const blob = dataUrlToBlob(dataUrl);
+  if (blob) {
+    putMedia({ appraisalId, kind: 'photo', blob, id: blobId })
+      .then(() => markUploaded(blobId, true))
+      .catch(() => undefined);
+  }
+  return { dataUrl };
 }
 
 /** fetchPhoto without the reason. */
@@ -146,7 +188,7 @@ export async function downloadPhoto(blobId: string, appraisalId: string): Promis
 }
 
 /** What to tell the appraiser about a photo this device could not load. */
-export function describeMissingPhoto(reason: PhotoFetchResult['reason']): string {
+export function describeMissingPhoto(reason: PhotoFetchResult['reason'], detail?: string): string {
   switch (reason) {
     case 'not-on-server':
       return 'Not uploaded yet. Open the platform on the device that took this photo to upload it.';
@@ -157,7 +199,7 @@ export function describeMissingPhoto(reason: PhotoFetchResult['reason']): string
     case 'sync-off':
       return 'Syncing is switched off on this server, so the photo is only on the device that took it.';
     default:
-      return 'This photo could not be loaded. Try again.';
+      return `This photo could not be loaded${detail ? ` (${detail})` : ''}. Try again.`;
   }
 }
 

@@ -100,13 +100,33 @@ function dequeue(collection: SyncCollection, id: string): void {
 export type SyncProblem = 'signed-out' | 'offline' | 'server' | 'conflict' | null;
 let lastProblem: SyncProblem = null;
 
+let lastDetail = '';
+
 export function syncProblem(): SyncProblem {
   return lastProblem;
 }
 
+/** What the server said about the last failure, in plain words where known. */
+export function syncProblemDetail(): string {
+  return lastDetail;
+}
+
+/**
+ * Turns a server error into something an appraiser can act on. The common
+ * one is the database's free daily allowance running out, which resets at
+ * midnight US Pacific time - 3 pm in Jakarta.
+ */
+export function explainServerError(raw: string): string {
+  if (/429|RESOURCE_EXHAUSTED|quota/i.test(raw)) {
+    return 'The database has reached its free daily limit. It resets at about 3 pm (Jakarta time); everything is kept on this device until then.';
+  }
+  return raw;
+}
+
 /** Also used by photo uploads, which share the sign-in. */
-export function noteProblem(problem: SyncProblem) {
+export function noteProblem(problem: SyncProblem, detail = '') {
   lastProblem = problem;
+  lastDetail = detail ? explainServerError(detail) : '';
   if (typeof window !== 'undefined') window.dispatchEvent(new Event(SYNC_CHANGED_EVENT));
 }
 
@@ -171,7 +191,7 @@ export async function pushRecord(
         return false;
       }
       queueWrite(collection, record);
-      noteProblem('server');
+      noteProblem('server', data?.error || `HTTP ${res.status}`);
       return false;
     }
 
@@ -219,18 +239,38 @@ export async function flushQueue(): Promise<number> {
  * records edited on one device at a time. Genuine simultaneous edits are caught
  * on write by the 409 path above, not here.
  */
+const CURSOR_KEY = 'eduversal_sync_cursor_v1';
+/** Overlap between checks, so a write landing while one runs is not missed. */
+const CURSOR_OVERLAP_MS = 2 * 60 * 1000;
+
 export async function pullAndMerge<T extends { id: string; updatedAt: string }>(
   collection: SyncCollection,
-  localRecords: T[]
+  localRecords: T[],
+  { full = false }: { full?: boolean } = {}
 ): Promise<{ merged: T[]; changed: boolean }> {
   if (!(await isSyncAvailable())) return { merged: localRecords, changed: false };
 
   try {
-    const res = await fetch(`/api/sync/${collection}`);
-    if (!res.ok) return { merged: localRecords, changed: false };
+    // After one full read, ask only for what changed since the last check.
+    const cursor = full ? undefined : readMap(CURSOR_KEY)[collection];
+    const res = await fetch(
+      `/api/sync/${collection}${cursor ? `?since=${encodeURIComponent(cursor)}` : ''}`
+    );
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      if (res.status === 401) noteProblem('signed-out');
+      else noteProblem('server', body?.error || `HTTP ${res.status}`);
+      return { merged: localRecords, changed: false };
+    }
 
     const data = await res.json();
     const serverRecords: T[] = Array.isArray(data.records) ? data.records : [];
+    if (typeof data.serverTime === 'string') {
+      const cursors = readMap(CURSOR_KEY);
+      cursors[collection] = new Date(new Date(data.serverTime).getTime() - CURSOR_OVERLAP_MS).toISOString();
+      writeMap(CURSOR_KEY, cursors);
+    }
+    if (lastProblem === 'server' && pendingWriteCount() === 0) noteProblem(null);
 
     const byId = new Map<string, T>();
     localRecords.forEach((r) => byId.set(r.id, r));

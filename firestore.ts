@@ -233,6 +233,10 @@ function toDocument(record: StoredRecord) {
     id: { stringValue: record.id },
     updatedAt: { stringValue: record.updatedAt },
     payload: { stringValue: JSON.stringify(record.payload) },
+    // Server time of the write, so devices can ask for "what changed since I
+    // last looked" and read only that - reading every record on every check
+    // used up the free plan's daily read allowance.
+    syncedAt: { stringValue: new Date().toISOString() },
   };
   // A photo names the observation it belongs to in a field of its own, so the
   // photos can be listed by observation without reading any image data.
@@ -273,6 +277,38 @@ export async function listRecords(collection: string): Promise<StoredRecord[]> {
     pageToken = page?.nextPageToken;
   } while (pageToken);
 
+  return results;
+}
+
+/**
+ * Records written after `since` (server time). Costs one read per record
+ * returned - one in total when nothing changed - instead of one per record.
+ */
+export async function listRecordsSince(collection: string, since: string): Promise<StoredRecord[]> {
+  const account = serviceAccount()!;
+  const url =
+    `https://firestore.googleapis.com/v1/projects/${account.projectId}` +
+    `/databases/(default)/documents:runQuery`;
+  const rows = await firestoreFetch(url, {
+    method: "POST",
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId: collection }],
+        where: {
+          fieldFilter: {
+            field: { fieldPath: "syncedAt" },
+            op: "GREATER_THAN",
+            value: { stringValue: since },
+          },
+        },
+      },
+    }),
+  });
+  const results: StoredRecord[] = [];
+  (Array.isArray(rows) ? rows : []).forEach((row: any) => {
+    const record = row?.document ? fromDocument(row.document) : null;
+    if (record) results.push(record);
+  });
   return results;
 }
 

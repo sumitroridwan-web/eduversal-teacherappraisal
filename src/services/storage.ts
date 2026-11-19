@@ -3,7 +3,13 @@ import { calculateF2Scores, calculateF2Predicate, getItemsForLevel } from '../da
 import { capFeedback } from './glowGrowGo';
 import { pushRecord, deleteRemote } from './sync';
 import { getMedia, blobToDataUrl, deleteMediaForAppraisal } from './mediaStore';
-import { uploadPhoto, downloadPhoto, deleteRemotePhoto, isPhotoUploaded } from './mediaSync';
+import {
+  uploadPhoto,
+  downloadPhoto,
+  deleteRemotePhoto,
+  isPhotoUploaded,
+  normalizeImageDataUrl,
+} from './mediaSync';
 
 const STORAGE_KEY = 'eduversal_appraisals_v4_clean';
 
@@ -50,7 +56,9 @@ export async function hydrateMedia(record: TeacherAppraisalRecord): Promise<Teac
       const stored = await getMedia(photo.blobId);
       if (stored) {
         try {
-          const dataUrl = await blobToDataUrl(stored.blob);
+          const read = await blobToDataUrl(stored.blob);
+          // Labelled as an image even when the browser dropped its type.
+          const dataUrl = normalizeImageDataUrl(read) || read;
           if (!isPhotoUploaded(photo.blobId)) void uploadPhoto(photo.blobId, record.id, dataUrl);
           return { ...photo, dataUrl };
         } catch {

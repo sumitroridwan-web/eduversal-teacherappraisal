@@ -149,9 +149,10 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
 
-    const sync = async () => {
+    // A full read when the app opens; after that, only what changed.
+    const sync = async (full = false) => {
       await flushQueue();
-      const { merged, changed } = await pullAndMerge('appraisals', loadAppraisals());
+      const { merged, changed } = await pullAndMerge('appraisals', loadAppraisals(), { full });
       if (cancelled || !changed) return;
 
       saveAppraisals(merged as TeacherAppraisalRecord[]);
@@ -164,7 +165,18 @@ export default function App() {
     // longer lists, so every observation shows all of its photos.
     const restorePhotos = async () => {
       await uploadPendingPhotos(loadAppraisals());
+      // Listing every stored photo reads the whole photo library, so it runs
+      // at most once a day per device.
+      const RESTORE_KEY = 'eduversal_photo_restore_at';
+      let last = 0;
+      try {
+        last = Number(localStorage.getItem(RESTORE_KEY) || 0);
+      } catch {}
+      if (Date.now() - last < 24 * 60 * 60 * 1000) return;
       const restored = await restoreUnlistedPhotos(loadAppraisals());
+      try {
+        localStorage.setItem(RESTORE_KEY, String(Date.now()));
+      } catch {}
       if (cancelled || !restored.length) return;
       restored.forEach((record) => saveOrUpdateAppraisal(record));
       setAppraisals(loadAppraisals());
@@ -191,7 +203,7 @@ export default function App() {
       if (document.visibilityState === 'visible') void retry(true);
     };
 
-    void sync().then(restorePhotos);
+    void sync(true).then(restorePhotos);
     const timer = setInterval(onTick, 15_000);
     window.addEventListener('online', onReturn);
     document.addEventListener('visibilitychange', onReturn);
